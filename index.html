@@ -1,0 +1,727 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex, nofollow">
+<meta name="theme-color" content="#1668e3">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Weekly Report">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<title>Weekly Report</title>
+<style>
+  :root {
+    --bg:#f2f5fa; --card:#fff; --ink:#0f1b2d; --mute:#66758b; --line:#e4e9f1; --soft:#eef3fb;
+    --brand:#1668e3; --brand2:#0ea5a4; --ok:#15a34a; --warn:#d98a06; --bad:#dc2626;
+    --grad:linear-gradient(135deg,#1668e3 0%,#0ea5a4 100%);
+    --shadow:0 8px 28px rgba(15,27,45,.08); --r:20px;
+    --top:env(safe-area-inset-top,0px); --bot:env(safe-area-inset-bottom,0px);
+  }
+  @media (prefers-color-scheme: dark) { :root {
+    --bg:#0a101c; --card:#121b2d; --ink:#e9eef6; --mute:#8d9bb0; --line:#23304a; --soft:#1a2740;
+    --brand:#4d90f5; --brand2:#2cc5c2; --ok:#37c26d; --warn:#f0a82b; --bad:#f06b6b; --shadow:0 8px 28px rgba(0,0,0,.35);
+  } }
+  * { box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  html, body { margin:0; background:var(--bg); color:var(--ink); }
+  body { font:16px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif; min-height:100vh; min-height:100dvh; -webkit-text-size-adjust:100%; overscroll-behavior-y:none; }
+  button, input, select { font:inherit; color:inherit; }
+  svg.i { width:1em; height:1em; fill:none; stroke:currentColor; stroke-width:2; stroke-linecap:round; stroke-linejoin:round; flex:none; }
+
+  /* top bar */
+  .bar { position:sticky; top:0; z-index:10; display:flex; align-items:center; gap:10px; padding:calc(10px + var(--top)) 14px 10px;
+    background:var(--bg); background:color-mix(in srgb, var(--bg) 82%, transparent); backdrop-filter:blur(14px); -webkit-backdrop-filter:blur(14px); }
+  .bar h1 { flex:1; margin:0; font-size:18px; font-weight:700; letter-spacing:-.01em; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .ibtn { width:40px; height:40px; border-radius:14px; border:1px solid var(--line); background:var(--card); display:grid; place-items:center; font-size:20px; cursor:pointer; }
+  main { max-width:640px; margin:0 auto; padding:6px 16px calc(28px + var(--bot)); }
+
+  /* surfaces */
+  .card { background:var(--card); border:1px solid var(--line); border-radius:var(--r); padding:16px; box-shadow:var(--shadow); margin-bottom:14px; }
+  .hero { background:var(--grad); color:#fff; border-radius:26px; padding:22px 20px; margin-bottom:16px; box-shadow:0 14px 34px rgba(22,104,227,.28); position:relative; overflow:hidden; }
+  .hero::after { content:""; position:absolute; right:-40px; top:-40px; width:160px; height:160px; border-radius:50%; background:rgba(255,255,255,.12); }
+  .hero h2 { margin:0 0 4px; font-size:24px; letter-spacing:-.02em; } .hero p { margin:0; opacity:.9; font-size:14px; }
+  .logo { width:64px; height:64px; border-radius:20px; background:rgba(255,255,255,.18); display:grid; place-items:center; font-size:34px; margin-bottom:14px; }
+  .mute { color:var(--mute); } small, .small { font-size:13px; }
+
+  /* buttons */
+  .btn { display:inline-flex; align-items:center; justify-content:center; gap:8px; min-height:48px; padding:0 18px; border:0; border-radius:14px; background:var(--grad); color:#fff; font-weight:650; cursor:pointer; width:100%; }
+  .btn.ghost { background:var(--soft); color:var(--brand); }
+  .btn.danger { background:var(--bad); }
+  .btn.sm { min-height:42px; padding:0 12px; font-size:14px; border-radius:12px; }
+  .btn:disabled { opacity:.45; pointer-events:none; }
+  .btn:active, .tile:active, .mod:active, .wk:active, .row-i:active { transform:scale(.985); }
+  .two { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+  label { display:block; font-size:13px; color:var(--mute); margin:12px 0 6px; font-weight:600; }
+  input.f, select.f { width:100%; min-height:50px; padding:0 14px; border:1.5px solid var(--line); border-radius:14px; background:var(--card); font-size:16px; outline:none; }
+  input.f:focus, select.f:focus { border-color:var(--brand); }
+  input.f:disabled { opacity:.55; }
+
+  /* home modules */
+  .mod { display:flex; align-items:center; gap:14px; padding:18px; border-radius:22px; background:var(--card); border:1px solid var(--line); box-shadow:var(--shadow); margin-bottom:14px; cursor:pointer; width:100%; text-align:left; }
+  .mod .ico { width:54px; height:54px; border-radius:18px; display:grid; place-items:center; font-size:28px; color:#fff; flex:none; }
+  .mod b { display:block; font-size:17px; letter-spacing:-.01em; } .mod span.s { color:var(--mute); font-size:13px; }
+  .mod .go { margin-left:auto; color:var(--mute); font-size:20px; }
+  .tag.now { background:var(--soft); background:color-mix(in srgb,var(--brand) 16%,transparent); color:var(--brand); }
+  .tag { display:inline-block; padding:2px 9px; border-radius:99px; font-size:11px; font-weight:700; background:var(--soft); color:var(--mute); margin-left:8px; vertical-align:middle; }
+
+  /* week cards */
+  .wk { display:block; width:100%; text-align:left; background:var(--card); border:1px solid var(--line); border-radius:20px; padding:16px; margin-bottom:12px; box-shadow:var(--shadow); cursor:pointer; }
+  .wk.locked { opacity:.55; cursor:default; }
+  .wk .t { display:flex; align-items:center; justify-content:space-between; font-weight:700; font-size:17px; }
+  .wk .t .n { width:38px; height:38px; border-radius:12px; background:var(--grad); color:#fff; display:grid; place-items:center; font-size:17px; margin-right:12px; flex:none; }
+  .wk .meta { display:flex; flex-wrap:wrap; gap:4px 14px; color:var(--mute); font-size:13px; margin-top:10px; }
+  .bar2 { height:8px; border-radius:99px; background:var(--soft); overflow:hidden; margin-top:12px; } .bar2 i { display:block; height:100%; background:var(--grad); border-radius:99px; transition:width .4s; }
+
+  /* action tiles */
+  .tiles { display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-top:6px; }
+  .sync { display:flex; align-items:center; gap:12px; padding:14px 16px; border-radius:18px; border:1px solid var(--line); background:var(--card); box-shadow:var(--shadow); margin-bottom:14px; }
+  .sync.pend { border-color:#f59e0b; background:rgba(245,158,11,.10); }
+  .sync b { display:block; } .sync small { color:var(--mute); }
+  .tile { display:flex; flex-direction:column; align-items:flex-start; gap:10px; padding:16px; border-radius:20px; border:1px solid var(--line); background:var(--card); box-shadow:var(--shadow); cursor:pointer; text-align:left; min-height:118px; }
+  .tile .c { width:42px; height:42px; border-radius:14px; display:grid; place-items:center; font-size:22px; color:#fff; }
+  .tile b { font-size:16px; } .tile small { color:var(--mute); line-height:1.25; display:block; }
+  .tile:disabled { opacity:.5; pointer-events:none; }
+  .sect { font-size:12px; font-weight:800; letter-spacing:.08em; text-transform:uppercase; color:var(--mute); margin:22px 4px 10px; }
+
+  /* item rows */
+  .row-i { display:flex; align-items:center; gap:12px; padding:13px 14px; background:var(--card); border:1px solid var(--line); border-radius:16px; margin-bottom:8px; cursor:pointer; }
+  .row-i .no { min-width:42px; height:34px; border-radius:11px; background:var(--soft); color:var(--brand); font-weight:800; display:grid; place-items:center; font-size:14px; padding:0 6px; }
+  .row-i .tx { flex:1; font-size:14px; line-height:1.35; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
+  .chip { display:inline-flex; align-items:center; gap:4px; padding:3px 10px; border-radius:99px; font-size:12px; font-weight:700; white-space:nowrap; background:var(--soft); color:var(--mute); }
+  .chip.Yes { background:var(--soft); background:color-mix(in srgb,var(--ok) 16%,transparent); color:var(--ok); }
+  .chip.No { background:var(--soft); background:color-mix(in srgb,var(--bad) 16%,transparent); color:var(--bad); }
+  .chip.NA { background:var(--soft); background:color-mix(in srgb,var(--mute) 18%,transparent); color:var(--mute); }
+  .chip.todo { background:var(--soft); background:color-mix(in srgb,var(--warn) 18%,transparent); color:var(--warn); }
+  .grp { font-size:13px; font-weight:700; color:var(--mute); margin:18px 4px 8px; }
+  .filters { display:flex; gap:8px; margin:2px 0 6px; overflow:auto; }
+  .filters button { border:1px solid var(--line); background:var(--card); border-radius:99px; padding:7px 14px; font-size:13px; font-weight:650; color:var(--mute); white-space:nowrap; cursor:pointer; }
+  .filters button.on { background:var(--grad); color:#fff; border-color:transparent; }
+
+  /* item detail */
+  .desc { font-size:13.5px; line-height:1.5; margin:8px 0 0; } .desc.id { color:var(--mute); font-size:12.5px; }
+  .slot { background:var(--card); border:1px solid var(--line); border-radius:20px; padding:14px; margin-bottom:12px; box-shadow:var(--shadow); }
+  .slot-h { display:flex; align-items:flex-start; gap:10px; margin-bottom:10px; }
+  .pill { background:var(--soft); color:var(--brand); border-radius:10px; padding:3px 9px; font-weight:800; font-size:13px; flex:none; }
+  .slot-h .cap { flex:1; font-size:14px; line-height:1.35; } .slot-h .cap b { font-weight:650; } .slot-h .id { color:var(--mute); font-size:12px; }
+  .photos { display:grid; gap:10px; margin-bottom:10px; } .photos.two { grid-template-columns:1fr 1fr; } .photos .photo { margin-bottom:0; }
+  .photo { position:relative; border-radius:16px; overflow:hidden; background:var(--soft); aspect-ratio:4/3; margin-bottom:10px; }
+  .photo img { width:100%; height:100%; object-fit:cover; display:block; }
+  .photo .loc { position:absolute; left:10px; bottom:10px; padding:3px 9px; border-radius:99px; background:rgba(245,158,11,.92); color:#1b1200; font-size:11px; font-weight:700; }
+  .photo .del { position:absolute; top:10px; right:10px; width:38px; height:38px; border-radius:12px; border:0; background:rgba(0,0,0,.55); color:#fff; display:grid; place-items:center; font-size:18px; cursor:pointer; }
+  .empty { border:2px dashed var(--line); border-radius:16px; aspect-ratio:16/7; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:6px; color:var(--mute); font-size:13px; margin-bottom:10px; }
+  .seg { display:grid; grid-template-columns:repeat(3,1fr); gap:8px; }
+  .seg button { min-height:52px; border-radius:14px; border:1.5px solid var(--line); background:var(--card); font-weight:750; font-size:16px; cursor:pointer; }
+  .seg button.on.Yes { background:var(--ok); border-color:var(--ok); color:#fff; } .seg button.on.No { background:var(--bad); border-color:var(--bad); color:#fff; } .seg button.on.NA { background:var(--mute); border-color:var(--mute); color:#fff; }
+  .pager { position:sticky; bottom:calc(8px + var(--bot)); display:grid; grid-template-columns:52px 1fr 52px; gap:10px; align-items:center; margin-top:6px; background:var(--card); background:color-mix(in srgb,var(--card) 90%,transparent); backdrop-filter:blur(12px); -webkit-backdrop-filter:blur(12px); border:1px solid var(--line); border-radius:18px; padding:8px; box-shadow:var(--shadow); }
+  .pager .mid { text-align:center; font-weight:700; font-size:14px; } .pager .ibtn { width:100%; height:44px; }
+
+  /* sheets, toast, busy */
+  .modal { position:fixed; inset:0; z-index:30; background:rgba(8,14,26,.55); display:flex; align-items:flex-end; justify-content:center; padding:0; animation:fade .18s; }
+  .sheet { background:var(--card); border-radius:26px 26px 0 0; padding:20px 18px calc(18px + var(--bot)); width:100%; max-width:640px; max-height:92vh; max-height:92dvh; overflow:auto; animation:up .22s; }
+  .sheet h3 { margin:0 0 6px; font-size:19px; } .sheet p { margin:0 0 14px; color:var(--mute); font-size:14px; white-space:pre-line; }
+  @media (min-width:700px) { .modal { align-items:center; padding:16px; } .sheet { border-radius:26px; } }
+  @keyframes up { from { transform:translateY(30px); opacity:0 } } @keyframes fade { from { opacity:0 } }
+  #toast { position:fixed; left:50%; bottom:calc(22px + var(--bot)); transform:translateX(-50%); z-index:40; display:flex; flex-direction:column; gap:8px; align-items:center; pointer-events:none; width:calc(100% - 32px); max-width:520px; }
+  .tst { background:#0f1b2d; color:#fff; padding:12px 16px; border-radius:14px; font-size:14px; box-shadow:0 10px 30px rgba(0,0,0,.3); animation:up .2s; width:100%; text-align:center; }
+  .tst.err { background:var(--bad); } .tst.ok { background:#12803d; }
+  #busy { position:fixed; inset:0; z-index:50; background:rgba(8,14,26,.45); display:grid; place-items:center; } #busy > div { display:grid; gap:10px; place-items:center; background:var(--card); padding:22px 26px; border-radius:20px; font-weight:600; max-width:80%; text-align:center; }
+  .spin { width:34px; height:34px; border-radius:50%; border:4px solid var(--soft); border-top-color:var(--brand); animation:sp .8s linear infinite; } @keyframes sp { to { transform:rotate(360deg) } }
+  .hide { display:none !important; }
+  table { width:100%; border-collapse:collapse; } td, th { text-align:left; padding:9px 4px; border-bottom:1px solid var(--line); font-size:13.5px; vertical-align:top; } th { color:var(--mute); font-size:12px; text-transform:uppercase; letter-spacing:.05em; }
+  .banner { background:var(--soft); background:color-mix(in srgb,var(--warn) 16%,transparent); color:var(--warn); border-radius:14px; padding:11px 14px; font-weight:650; font-size:14px; margin-bottom:14px; display:flex; gap:8px; align-items:center; }
+</style>
+</head>
+<body>
+<header class="bar" id="bar">
+  <button class="ibtn hide" id="back" aria-label="Kembali"></button>
+  <h1 id="title">Weekly Report</h1>
+  <button class="ibtn hide" id="logout" aria-label="Keluar"></button>
+</header>
+<main id="main"></main>
+<div id="toast"></div>
+<div id="busy" class="hide"><div><div class="spin"></div><span id="busyt">Memproses…</span></div></div>
+<input type="file" id="cam" accept="image/*" capture="environment" class="hide">
+<input type="file" id="gal" accept="image/*" class="hide">
+
+<script src="config.js?v=20261014c"></script>
+<script>
+const CFG = window.APP_CONFIG;
+const $ = (s, r = document) => r.querySelector(s);
+const $$ = (s, r = document) => [...r.querySelectorAll(s)];
+const main = $('#main');
+
+/* ---------- icons ---------- */
+const P = {
+  back:'<path d="M15 18l-6-6 6-6"/>', chev:'<path d="M9 18l6-6-6-6"/>',
+  out:'<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="M16 17l5-5-5-5"/><path d="M21 12H9"/>',
+  cam:'<path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/>',
+  img:'<rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/>',
+  edit:'<path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/>',
+  trash:'<path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M19 6l-1 14H6L5 6"/>',
+  check:'<path d="M20 6L9 17l-5-5"/>',
+  save:'<path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><path d="M17 21v-8H7v8"/><path d="M7 3v5h8"/>',
+  load:'<path d="M8 17l4 4 4-4"/><path d="M12 12v9"/><path d="M20.9 18.9A5 5 0 0 0 18 9h-1.3A8 8 0 1 0 3 16.3"/>',
+  pdf:'<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M12 18v-6"/><path d="M9 15l3 3 3-3"/>',
+  send:'<path d="M22 2L11 13"/><path d="M22 2l-7 20-4-9-9-4z"/>',
+  lock:'<rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>',
+  clip:'<path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1"/><path d="M9 14l2 2 4-4"/>',
+  wrench:'<path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94z"/>'
+};
+const ic = (n, s) => `<svg class="i" viewBox="0 0 24 24"${s ? ` style="font-size:${s}px"` : ''}>${P[n]}</svg>`;
+
+/* ---------- state ---------- */
+let S = { code:'', officer:'', role:'', officers:[], period:null, forms:[], defaults:{}, items:[], photos:[], answers:{}, captions:{}, lastSaved:'' };
+let stack = [{ view:'login' }];
+const thumbCache = {};
+
+/* ---------- outbox: everything the officer enters is kept on the phone first (IndexedDB), uploaded later ---------- */
+let OUT = [];                                              // pending operations, mirrored to IndexedDB
+const idb = (() => {
+  let p;
+  const open = () => p || (p = new Promise((ok, no) => {
+    if (!window.indexedDB) return no(new Error('no indexedDB'));
+    const r = indexedDB.open('fsc-outbox', 1);
+    r.onupgradeneeded = () => { r.result.createObjectStore('ops', { keyPath:'id' }); r.result.createObjectStore('meta'); };
+    r.onsuccess = () => ok(r.result); r.onerror = () => no(r.error);
+  }));
+  const run = async (st, mode, fn) => { const d = await open(); return new Promise((ok, no) => { const t = d.transaction(st, mode), q = fn(t.objectStore(st)); t.oncomplete = () => ok(q && q.result); t.onerror = t.onabort = () => no(t.error); }); };
+  return { ops:() => run('ops', 'readonly', (s) => s.getAll()), put:(o) => run('ops', 'readwrite', (s) => s.put(o)), del:(id) => run('ops', 'readwrite', (s) => s.delete(id)),
+    getMeta:(k) => run('meta', 'readonly', (s) => s.get(k)), setMeta:(k, v) => run('meta', 'readwrite', (s) => s.put(v, k)) };
+})();
+let storageWarned = false;
+async function outPut(o) { try { await idb.put(o); } catch { if (!storageWarned) { storageWarned = true; toast('Penyimpanan HP tidak tersedia: data hanya aman selama aplikasi terbuka. Segera upload.', 'err'); } } }
+async function outDel(id) { OUT = OUT.filter((o) => o.id !== id); try { await idb.del(id); } catch {} }
+async function outAdd(o) {
+  const pid = S.period ? S.period.periodId : '';
+  // answers and captions: only the latest value per target matters
+  const same = (x) => x.type === o.type && ((o.type === 'answer' && x.item === o.item) || (o.type === 'caption' && x.item === o.item && x.slot === o.slot));
+  for (const x of OUT.filter(same)) await outDel(x.id);
+  const full = { id:(o.type === 'photo' ? 'L' : 'Q') + Date.now().toString(36) + Math.random().toString(36).slice(2, 7), t:Date.now(), periodId:pid, officer:S.officer, ...o };
+  OUT.push(full); await outPut(full);
+  if (store.get('auto') === '1' && navigator.onLine) syncOut(true);
+  return full;
+}
+async function outLoad() { try { OUT = (await idb.ops()) || []; } catch { OUT = []; } }
+const pendingCount = () => ({ photos:OUT.filter((o) => o.type === 'photo').length, other:OUT.filter((o) => o.type !== 'photo').length, all:OUT.length });
+const isLocal = (id) => String(id)[0] === 'L';
+const delIds = () => new Set(OUT.filter((o) => o.type === 'delPhoto').map((o) => o.photoId));
+function applyOut() {                                      // lay the pending answers/captions over what the cloud returned
+  for (const o of OUT) {
+    if (o.periodId && S.period && o.periodId !== S.period.periodId) continue;
+    if (o.type === 'answer') { if (o.answer) S.answers[o.item] = { answer:o.answer, remarks:o.remarks, officer:o.officer }; else delete S.answers[o.item]; }
+    if (o.type === 'caption') { const k = `${o.item}:${o.slot}`; if (o.text) S.captions[k] = o.text; else delete S.captions[k]; }
+  }
+}
+function cacheState() { try { idb.setMeta('state', { period:S.period, items:S.items, photos:S.photos, answers:S.answers0, captions:S.captions0, officer:S.officer, officers:S.officers, role:S.role, forms:S.forms, defaults:S.defaults, code:S.code }); } catch {} }
+let syncing = false;
+async function sendOp(o) {
+  if (S.period && o.periodId && o.periodId !== S.period.periodId) throw new Error('Isian ini milik periode lain');
+  if (o.type === 'photo') {
+    const d = await api('upload', { item:o.item, slot:o.slot, data:o.b64, photoTime:o.photoTime, officer:o.officer });
+    thumbCache[d.id] = 'data:image/jpeg;base64,' + o.b64;
+  } else if (o.type === 'delPhoto') await api('deletePhoto', { id:o.photoId, officer:o.officer });
+  else if (o.type === 'answer') await api('setAnswer', { item:o.item, answer:o.answer, remarks:o.remarks, officer:o.officer });
+  else if (o.type === 'caption') await api('setCaption', { item:o.item, slot:o.slot, text:o.text, officer:o.officer });
+}
+/** Upload everything pending, oldest first. Stops at the first failure: the rest stays safe on the phone. */
+async function syncOut(silent) {
+  if (syncing || !OUT.length) return true;
+  syncing = true; let ok = 0, fail = '';
+  const q = OUT.slice().sort((a, b) => a.t - b.t), total = q.length;
+  const run = async () => {
+    for (const o of q) {
+      const lbl = $('#busyt'); if (lbl && !silent) lbl.textContent = `Mengunggah ${ok + 1} dari ${total}…`;
+      try { await sendOp(o); await outDel(o.id); ok++; } catch (e) { fail = e.message; break; }
+    }
+  };
+  try { if (silent) await run(); else await busy('Mengunggah…', run); } finally { syncing = false; }
+  if (ok) { try { await refresh(); } catch {} }
+  if (!silent || fail) {
+    if (fail) toast(`${ok} terkirim, ${total - ok} masih di HP. ${/fetch|load failed|network/i.test(fail) ? 'Tidak ada koneksi.' : fail}`, 'err');
+    else toast(`${ok} data terkirim ke cloud`, 'ok');
+  }
+  render();
+  return !fail;
+}
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const toLocalInput = (d) => { const p = (n) => String(n).padStart(2,'0'); return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`; };
+const hhmm = () => new Date().toLocaleTimeString('id-ID', { hour:'2-digit', minute:'2-digit' });
+const store = { get(k) { try { return localStorage.getItem(k) || ''; } catch { return ''; } }, set(k, v) { try { localStorage.setItem(k, v); } catch {} } };
+
+/* ---------- api / ui helpers ---------- */
+async function api(action, params = {}) {
+  if (!CFG.API_URL) throw new Error('API_URL belum diisi di config.js');
+  const res = await fetch(CFG.API_URL, { method:'POST', headers:{ 'Content-Type':'text/plain' },
+    body: JSON.stringify({ action, code:S.code, officer:S.officer, ...params }) });
+  const j = await res.json();
+  if (!j.ok) throw new Error(j.error);
+  return j.data;
+}
+function toast(text, kind) {
+  const d = document.createElement('div'); d.className = 'tst ' + (kind || ''); d.textContent = text;
+  $('#toast').append(d); setTimeout(() => d.remove(), 3800);
+}
+async function busy(text, fn) {
+  $('#busyt').textContent = text; $('#busy').classList.remove('hide');
+  try { return await fn(); } finally { $('#busy').classList.add('hide'); }
+}
+function sheet(html) {
+  const m = document.createElement('div'); m.className = 'modal'; m.innerHTML = `<div class="sheet">${html}</div>`;
+  document.body.appendChild(m); return m;
+}
+function ask({ title, msg, ok = 'OK', danger }) {
+  return new Promise((resolve) => {
+    const m = sheet(`<h3>${esc(title)}</h3><p>${esc(msg || '')}</p><div class="two"><button class="btn ghost" id="n">Batal</button><button class="btn ${danger ? 'danger' : ''}" id="y">${esc(ok)}</button></div>`);
+    $('#n', m).onclick = () => { m.remove(); resolve(false); }; $('#y', m).onclick = () => { m.remove(); resolve(true); };
+  });
+}
+function askText({ title, msg, value }) {
+  return new Promise((resolve) => {
+    const m = sheet(`<h3>${esc(title)}</h3><p>${esc(msg || '')}</p><input class="f" id="v" value="${esc(value || '')}"><div class="two" style="margin-top:14px"><button class="btn ghost" id="n">Batal</button><button class="btn" id="y">Simpan</button></div>`);
+    const v = $('#v', m); setTimeout(() => v.focus(), 50);
+    $('#n', m).onclick = () => { m.remove(); resolve(null); }; $('#y', m).onclick = () => { m.remove(); resolve(v.value); };
+  });
+}
+
+/* ---------- navigation (works with the phone's back gesture/button) ---------- */
+function go(view, params = {}) { stack.push({ view, ...params }); history.pushState({ n:stack.length }, ''); render(); window.scrollTo(0, 0); }
+function reset(view) { stack = [{ view }]; history.replaceState({ n:1 }, ''); render(); window.scrollTo(0, 0); }
+window.addEventListener('popstate', () => { if (stack.length > 1) stack.pop(); render(); });
+$('#back').innerHTML = ic('back'); $('#logout').innerHTML = ic('out');
+$('#back').onclick = () => history.back();
+$('#logout').onclick = async () => {
+  if (!(await ask({ title:'Keluar?', msg:'Anda perlu memasukkan kode akses lagi.', ok:'Keluar' }))) return;
+  store.set('code', ''); store.set('officer', '');
+  S = { ...S, code:'', officer:'', role:'', period:null, items:[], photos:[], answers:{}, captions:{} }; reset('login');
+};
+const cur = () => stack[stack.length - 1];
+
+function render() {
+  const t = cur();
+  $('#back').classList.toggle('hide', stack.length < 2);
+  $('#logout').classList.toggle('hide', !['home', 'master'].includes(t.view));
+  ({ login, who, home, soon, fsc, week, item, master }[t.view])(t);
+}
+
+/* ---------- photo pipeline: keep resolution (capped), stamp date/time inside the photo, cut JPEG quality ---------- */
+function loadCanvas(file) {
+  return new Promise((resolve, reject) => {
+    const img = new Image(), url = URL.createObjectURL(file);
+    img.onload = () => {
+      const k = Math.min(1, CFG.MAX_SIDE / Math.max(img.width, img.height));
+      const c = document.createElement('canvas'); c.width = Math.round(img.width * k); c.height = Math.round(img.height * k);
+      const g = c.getContext('2d'); g.imageSmoothingEnabled = true; g.imageSmoothingQuality = 'high';
+      g.drawImage(img, 0, 0, c.width, c.height);
+      URL.revokeObjectURL(url); resolve(c);
+    };
+    img.onerror = () => reject(new Error('Gagal membaca foto'));
+    img.src = url;
+  });
+}
+const stampText = (d) => d.toLocaleString('en-GB', { day:'2-digit', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit', hour12:false }).replace(',', '');
+function stamped(src, when) {
+  const c = document.createElement('canvas'); c.width = src.width; c.height = src.height;
+  const g = c.getContext('2d'); g.drawImage(src, 0, 0);
+  const size = Math.max(14, Math.round(Math.max(c.width, c.height) * 0.036)), pad = Math.round(size * 0.5);
+  g.font = `600 ${size}px -apple-system, system-ui, Arial, sans-serif`; g.textBaseline = 'alphabetic'; g.textAlign = 'right';
+  const text = stampText(when), w = g.measureText(text).width;
+  g.fillStyle = 'rgba(0,0,0,.45)'; g.fillRect(c.width - w - pad * 2, c.height - size - pad * 1.6, w + pad * 2, size + pad * 1.6);
+  g.fillStyle = '#fff'; g.shadowColor = 'rgba(0,0,0,.8)'; g.shadowBlur = 3;
+  g.fillText(text, c.width - pad, c.height - pad * 1.1);
+  return c;
+}
+const toJpeg = (c) => new Promise((resolve, reject) => c.toBlob((b) => {
+  if (!b) return reject(new Error('Gagal memproses foto'));
+  const r = new FileReader(); r.onload = () => resolve({ b64: r.result.split(',')[1] }); r.readAsDataURL(b);
+}, 'image/jpeg', CFG.JPEG_QUALITY));
+function stage(canvas, when) {
+  return new Promise((resolve) => {
+    const m = sheet(`<h3>Pratinjau foto</h3><p>Tanggal dan jam akan tercetak di pojok kanan bawah foto.</p><div id="pv"></div>
+      <label>Tanggal & jam di foto</label><input class="f" type="datetime-local" id="pvt">
+      <div class="two" style="margin-top:14px"><button class="btn ghost" id="pvc">Batal</button><button class="btn" id="pvs">${ic('check')} Simpan foto</button></div>`);
+    const pv = $('#pv', m), inp = $('#pvt', m); inp.value = toLocalInput(when);
+    const draw = () => { const d = new Date(inp.value); const c = stamped(canvas, isNaN(d) ? when : d); c.style.cssText = 'width:100%;border-radius:14px;display:block'; pv.replaceChildren(c); };
+    inp.oninput = draw; draw();
+    $('#pvc', m).onclick = () => { m.remove(); resolve(null); };
+    $('#pvs', m).onclick = () => { const d = new Date(inp.value); m.remove(); resolve({ when: isNaN(d) ? when : d, canvas }); };
+  });
+}
+
+/* ---------- data helpers ---------- */
+async function refresh() {
+  const d = await api('state');
+  Object.assign(S, { period:d.period, items:d.items, photos:d.photos, answers:d.answers, captions:d.captions || {} });
+  S.answers0 = JSON.parse(JSON.stringify(S.answers)); S.captions0 = JSON.parse(JSON.stringify(S.captions));
+  cacheState(); applyOut();
+}
+const WEEKS = [1, 2, 3, 4];
+const photosOf = (item, slot) => {
+  const gone = delIds(), pid = S.period ? S.period.periodId : '';
+  const cloud = S.photos.filter((p) => p.item === item && p.slot === slot && !gone.has(p.id)).sort((a, b) => a.idx - b.idx);
+  const mine = OUT.filter((o) => o.type === 'photo' && o.item === item && o.slot === slot && o.periodId === pid).sort((a, b) => a.t - b.t).map((o) => ({ id:o.id, item, slot, officer:o.officer, local:true }));
+  return cloud.concat(mine);
+};
+const allPhotos = () => { const gone = delIds(), pid = S.period ? S.period.periodId : ''; return S.photos.filter((p) => !gone.has(p.id)).concat(OUT.filter((o) => o.type === 'photo' && o.periodId === pid).map((o) => ({ id:o.id, item:o.item, slot:o.slot, officer:o.officer, local:true }))); };
+const filledSlots = (i) => i.slots.filter((_, k) => photosOf(i.item, k).length).length;
+const today = () => toLocalInput(new Date()).slice(0, 10);
+const dateText = (d) => { const m = String(d || '').split('-'); return m.length === 3 ? new Date(+m[0], +m[1] - 1, +m[2]).toLocaleDateString('en-GB', { day:'2-digit', month:'short', year:'numeric' }).toUpperCase() : '-'; };
+function weekStats(w) {
+  const its = S.items.filter((i) => i.week === w);
+  const answered = its.filter((i) => S.answers[i.item]).length;
+  const slotsTotal = its.reduce((n, i) => n + i.slots.length, 0), have = its.reduce((n, i) => n + filledSlots(i), 0);
+  return { items:its.length, answered, slotsTotal, have, pct: its.length ? Math.round(answered * 100 / its.length) : 0 };
+}
+
+/* ---------- views ---------- */
+async function signIn(code, remember, auto) {
+  S.code = code;
+  try {
+    const d = await busy('Memeriksa…', () => api('login'));
+    Object.assign(S, { role:d.role, officers:d.officers, period:d.period, forms:d.forms || [], defaults:d.defaults || {} });
+    store.set('code', remember ? code : '');
+    try { idb.setMeta('login', { code, role:d.role, officers:d.officers, period:d.period, forms:d.forms || [], defaults:d.defaults || {} }); } catch {}
+    if (d.role === 'master') return reset('master');
+    const saved = store.get('officer');
+    if (auto && saved && d.officers.includes(saved)) {          // remembered device: straight to the home screen
+      S.officer = saved; await busy('Memuat data…', refresh); return reset('home');
+    }
+    reset('who');
+  } catch (e) {
+    const offline = !navigator.onLine || /load failed|failed to fetch|network/i.test(e.message || '');
+    if (auto && offline) {                                       // no connection: open with what the phone has
+      try {
+        const lg = await idb.getMeta('login'), st = await idb.getMeta('state'), saved = store.get('officer');
+        if (lg && st && lg.code === code && lg.role === 'officer' && saved) {
+          Object.assign(S, { role:'officer', officers:lg.officers, period:lg.period, forms:lg.forms, defaults:lg.defaults, officer:saved,
+            items:st.items || [], photos:st.photos || [], answers:st.answers || {}, captions:st.captions || {} });
+          S.answers0 = JSON.parse(JSON.stringify(S.answers)); S.captions0 = JSON.parse(JSON.stringify(S.captions)); applyOut();
+          reset('home'); return toast('Offline: memakai data terakhir di HP', 'ok');
+        }
+      } catch {}
+    }
+    S.code = ''; if (auto && !offline) store.set('code', '');
+    reset('login'); toast(offline ? 'Tidak ada koneksi. Buka lagi saat ada sinyal.' : e.message, 'err');
+  }
+}
+
+function login() {
+  $('#title').textContent = '';
+  main.innerHTML = `<div class="hero" style="margin-top:18px"><div class="logo">${ic('clip', 34)}</div><h2>Weekly Report</h2><p>Laporan mingguan kapal dengan foto, langsung tersinkron ke kantor.</p></div>
+    <div class="card"><label style="margin-top:0">Kode akses</label><input class="f" id="code" type="password" autocomplete="off" autocapitalize="off" placeholder="Masukkan kode akses">
+    <label style="display:flex;align-items:center;gap:10px;margin:14px 0 0;color:var(--ink);font-size:14px;font-weight:500"><input type="checkbox" id="rem" style="width:20px;height:20px"> Ingat di perangkat ini</label>
+    <button class="btn" id="go" style="margin-top:16px">Masuk</button></div>`;
+  const submit = () => { const c = $('#code').value.trim(); if (c) signIn(c, $('#rem').checked, false); };
+  $('#go').onclick = submit; $('#code').onkeydown = (e) => { if (e.key === 'Enter') submit(); };
+}
+
+function who() {
+  $('#title').textContent = 'Siapa Anda?';
+  const last = store.get('officer');
+  main.innerHTML = `<p class="mute">Pilih nama Anda untuk mulai.</p>` + S.officers.map((o) =>
+    `<button class="mod" data-o="${esc(o)}" style="padding:14px 16px"><span class="ico" style="background:var(--grad);width:44px;height:44px;border-radius:14px;font-size:20px;font-weight:800">${esc(o[0] || '?')}</span><div><b>${esc(o)}</b>${o === last ? '<span class="s">terakhir dipakai</span>' : ''}</div><span class="go">${ic('chev')}</span></button>`).join('');
+  $$('[data-o]').forEach((b) => b.onclick = async () => {
+    S.officer = b.dataset.o; store.set('officer', S.officer);
+    try { await busy('Memuat data…', refresh); reset('home'); } catch (e) { toast(e.message, 'err'); }
+  });
+}
+
+function home() {
+  $('#title').textContent = '';
+  const p = S.period;
+  main.innerHTML = `<div class="hero"><p>Selamat datang,</p><h2>${esc(S.officer)}</h2><p style="margin-top:8px">${p ? `${esc(p.label)} · Week ${p.activeWeek}` : 'Belum ada periode aktif'}</p>${pendingCount().all ? `<p style="margin-top:8px"><b>${pendingCount().photos} foto belum diupload</b></p>` : ''}</div>
+    <div style="text-align:center;margin:-4px 0 6px"><button id="chg" class="btn ghost sm" style="width:auto">Bukan Anda? Ganti nama</button></div>
+    <div class="sect" style="margin-top:6px">Pilih laporan</div>
+    <button class="mod" id="m1"><span class="ico" style="background:var(--grad)">${ic('clip', 28)}</span><div><b>FSC Checklist</b><span class="s">${p ? esc(p.title) + ' · ' + esc(p.code) : 'Menunggu master membuat periode baru'}</span></div><span class="go">${ic('chev')}</span></button>
+    <button class="mod" id="m2"><span class="ico" style="background:linear-gradient(135deg,#f59e0b,#ef4444)">${ic('wrench', 28)}</span><div><b>Weekly Deck & Engine Report<span class="tag">Segera</span></b><span class="s">Maintenance report to Owner · dikirim tiap Sabtu</span></div><span class="go">${ic('chev')}</span></button>
+    <p class="mute small" style="text-align:center;margin-top:22px">Pengaturan foto: ${CFG.MAX_SIDE} px · kualitas ${CFG.JPEG_QUALITY}</p>`;
+  $('#m1').onclick = async () => {
+    try { await busy('Memuat…', refresh); } catch (e) { if (!S.items.length) { toast('Tidak ada koneksi dan belum ada data tersimpan.', 'err'); return; } toast('Offline: memakai data terakhir di HP', 'ok'); }
+    if (!S.period) return toast('Belum ada periode aktif. Hubungi master.');
+    go('fsc');
+  };
+  $('#m2').onclick = () => go('soon');
+  $('#chg').onclick = () => { store.set('officer', ''); reset('who'); };
+}
+
+function soon() {
+  $('#title').textContent = 'Weekly Deck & Engine';
+  main.innerHTML = `<div class="card" style="text-align:center;padding:34px 20px"><div class="logo" style="margin:0 auto 14px;background:var(--soft);color:var(--warn)">${ic('wrench', 34)}</div>
+    <h2 style="margin:0 0 6px">Segera hadir</h2><p class="mute" style="margin:0">Modul ini dikerjakan setelah FSC Checklist terbukti lancar. Pola kerjanya sama: foto, stempel waktu, lalu PDF.</p></div>`;
+}
+
+function fsc() {
+  const p = S.period;
+  $('#title').textContent = p ? p.label : 'FSC Checklist';
+  if (!p) { main.innerHTML = '<div class="card mute" style="text-align:center">Belum ada periode aktif.</div>'; return; }
+  const cards = WEEKS.map((w) => {
+    const open = w <= p.activeWeek, st = weekStats(w);
+    return `<button class="wk ${open ? '' : 'locked'}" data-w="${w}"><div class="t"><div style="display:flex;align-items:center"><span class="n">${w}</span>Week ${w}${w === p.activeWeek ? '<span class="tag now">Aktif</span>' : ''}</div>${open ? ic('chev', 20) : ic('lock', 18)}</div>
+      <div class="meta">${open ? `<span>${st.answered}/${st.items} item dijawab</span><span>${st.have}/${st.slotsTotal} slot terisi foto</span>` : '<span>Belum dibuka</span>'}</div><div class="bar2"><i style="width:${open ? st.pct : 0}%"></i></div></button>`;
+  }).join('');
+  const pc = pendingCount();
+  main.innerHTML = `<div class="sync ${pc.all ? 'pend' : ''}"><div style="flex:1"><b>${pc.all ? `${pc.photos} foto · ${pc.other} perubahan belum diupload` : 'Semua sudah di cloud'}</b><small>${pc.all ? 'Aman tersimpan di HP. Upload kalau sudah lengkap.' : 'Tidak ada yang menunggu.'}</small></div>${pc.all ? `<button class="btn sm" id="upl" style="width:auto">${ic('send')} Upload</button>` : ''}</div>
+    <label style="display:flex;align-items:center;gap:10px;margin:-4px 2px 14px;color:var(--mute);font-size:13px;font-weight:500"><input type="checkbox" id="auto" style="width:18px;height:18px" ${store.get('auto') === '1' ? 'checked' : ''}> Upload otomatis saat ada sinyal</label>
+    <div class="sect" style="margin-top:4px">Pilih minggu</div>${cards}
+    <div class="sect">Simpan & PDF</div>
+    <div class="tiles">
+      <button class="tile" id="a-save"><span class="c" style="background:linear-gradient(135deg,#1668e3,#4d90f5)">${ic('save')}</span><div><b>Save</b><small>${S.lastSaved ? 'Terakhir dicek ' + esc(S.lastSaved) : 'Cek apa yang masih kurang'}</small></div></button>
+      <button class="tile" id="a-load"><span class="c" style="background:linear-gradient(135deg,#0ea5a4,#2cc5c2)">${ic('load')}</span><div><b>Load</b><small>Muat data terbaru (perubahan di HP tetap ada)</small></div></button>
+      <button class="tile" id="a-pdf" style="grid-column:1/-1;min-height:0"><span class="c" style="background:linear-gradient(135deg,#7c3aed,#a78bfa)">${ic('pdf')}</span><div><b>Create PDF</b><small>PDF dari data di cloud (upload dulu)</small></div></button>
+    </div>`;
+  $$('.wk').forEach((b) => b.onclick = () => { if (!b.classList.contains('locked')) go('week', { w:+b.dataset.w }); else toast('Week ini belum dibuka oleh master.'); });
+  if ($('#upl')) $('#upl').onclick = () => syncOut();
+  $('#auto').onchange = (e) => { store.set('auto', e.target.checked ? '1' : '0'); if (e.target.checked && OUT.length && navigator.onLine) syncOut(true); };
+  $('#a-save').onclick = checkAll; $('#a-load').onclick = loadAll; $('#a-pdf').onclick = downloadPdf;
+}
+
+let filter = 'all';
+function week(t) {
+  $('#title').textContent = `Week ${t.w}`;
+  const its = S.items.filter((i) => i.week === t.w);
+  const done = (i) => !!S.answers[i.item];
+  const shown = its.filter((i) => filter === 'all' || (filter === 'todo' ? !done(i) : done(i)));
+  let last = null, html = '';
+  for (const i of shown) {
+    if (i.section !== last) { html += `<div class="grp">${esc(i.section)}</div>`; last = i.section; }
+    const a = S.answers[i.item], n = filledSlots(i);
+    const chip = a ? `<span class="chip ${a.answer}">${a.answer}</span>` : n ? '<span class="chip todo">Belum dijawab</span>' : '';
+    html += `<div class="row-i" data-i="${esc(i.item)}"><span class="no">${esc(i.item)}</span><span class="tx">${esc(i.text)}</span><span style="display:grid;gap:4px;justify-items:end">${chip}${i.slots.length ? `<span class="small mute">${n}/${i.slots.length} foto</span>` : ''}</span></div>`;
+  }
+  const st = weekStats(t.w);
+  main.innerHTML = `<div class="card" style="padding:14px 16px"><div style="display:flex;justify-content:space-between;font-weight:700"><span>Week ${t.w}</span><span class="mute">${st.answered}/${st.items} dijawab</span></div><div class="bar2"><i style="width:${st.pct}%"></i></div></div>
+    <div class="filters">${[['all', 'Semua'], ['todo', 'Belum dijawab'], ['done', 'Sudah dijawab']].map(([k, l]) => `<button data-f="${k}" class="${filter === k ? 'on' : ''}">${l}</button>`).join('')}</div>
+    ${html || '<p class="mute" style="text-align:center;margin-top:30px">Tidak ada item.</p>'}`;
+  $$('.row-i').forEach((r) => r.onclick = () => go('item', { w:t.w, item:r.dataset.i }));
+  $$('[data-f]').forEach((b) => b.onclick = () => { filter = b.dataset.f; week(t); });
+}
+
+function item(t) {
+  const list = S.items.filter((i) => i.week === t.w), idx = list.findIndex((i) => i.item === t.item), def = list[idx];
+  $('#title').textContent = `Item ${def.item}`;
+  const a = S.answers[def.item] || { answer:'', remarks:'' };
+  const blocked = !!(a.answer && a.officer !== S.officer);          // answered by another officer
+  const slots = def.slots.map((sl, k) => {
+    const ps = photosOf(def.item, k), cap = S.captions[`${def.item}:${k}`];
+    const photos = ps.length ? `<div class="photos ${ps.length > 1 ? 'two' : ''}">${ps.map((p) => `<div class="photo" data-id="${p.id}"><img alt="">${p.local ? '<span class="loc">di HP</span>' : ''}<button class="del" data-act="del" data-pid="${p.id}" aria-label="Hapus foto">${ic('trash')}</button></div>`).join('')}</div>` : `<div class="empty">${ic('cam', 28)}Belum ada foto</div>`;
+    const add = ps.length < 2 ? `<div class="two"><button class="btn sm" data-act="cam">${ic('cam')} ${ps.length ? 'Foto ke-2' : 'Kamera'}</button><button class="btn sm ghost" data-act="gal">${ic('img')} Galeri</button></div>` : '<p class="mute small" style="margin:0;text-align:center">Maksimal 2 foto per slot. Hapus salah satu untuk mengganti.</p>';
+    return `<div class="slot" data-s="${k}"><div class="slot-h"><span class="pill">${esc(sl.id)}</span><div class="cap"><b>${esc(cap || sl.label)}</b>${!cap && sl.labelId ? ` <span class="id">(${esc(sl.labelId)})</span>` : ''}</div>
+      <button class="ibtn" data-act="cap" style="width:36px;height:36px;font-size:17px" aria-label="Edit keterangan">${ic('edit')}</button></div>${photos}${add}</div>`;
+  }).join('');
+  main.innerHTML = `<div class="card"><span class="chip">${esc(def.section)}</span><p class="desc">${esc(def.text)}</p>${def.textId ? `<p class="desc id">${esc(def.textId)}</p>` : ''}</div>
+    ${slots || '<div class="card mute" style="text-align:center">Item ini tidak memerlukan foto. Cukup pilih hasilnya.</div>'}
+    <div class="card"><b>Hasil</b><div class="seg" style="margin-top:10px">${['Yes', 'No', 'NA'].map((v) => `<button class="${a.answer === v ? 'on ' + v : ''}" data-ans="${v}" ${blocked ? 'disabled' : ''}>${v}</button>`).join('')}</div>
+      <label>Remarks (opsional)</label><input class="f" id="rem" value="${esc(a.remarks || '')}" placeholder="Kosongkan jika tidak perlu" ${blocked ? 'disabled' : ''}>
+      ${blocked ? `<p class="mute small">Diisi oleh ${esc(a.officer)}</p>` : ''}</div>
+    <div class="pager"><button class="ibtn" id="pv" ${idx <= 0 ? 'disabled style="opacity:.35"' : ''} aria-label="Sebelumnya">${ic('back')}</button><div class="mid">${idx + 1} / ${list.length}</div><button class="ibtn" id="nx" ${idx >= list.length - 1 ? 'disabled style="opacity:.35"' : ''} aria-label="Berikutnya">${ic('chev')}</button></div>`;
+  $$('.photo').forEach(loadThumb);
+  $$('[data-act]').forEach((b) => b.onclick = () => act(b, def));
+  const save = async (answer) => {
+    try {
+      const remarks = $('#rem').value.trim();
+      await outAdd({ type:'answer', item:def.item, answer, remarks });
+      if (answer) S.answers[def.item] = { answer, remarks, officer:S.officer }; else delete S.answers[def.item];
+      item(t);
+    } catch (e) { toast(e.message, 'err'); }
+  };
+  $$('[data-ans]').forEach((b) => b.onclick = () => save(a.answer === b.dataset.ans ? '' : b.dataset.ans));
+  $('#rem').onchange = () => { if (a.answer) save(a.answer); else toast('Pilih Yes/No/NA dulu agar remarks tersimpan'); };
+  const move = (d) => { stack[stack.length - 1] = { view:'item', w:t.w, item:list[idx + d].item }; render(); window.scrollTo(0, 0); };
+  $('#pv').onclick = () => move(-1); $('#nx').onclick = () => move(1);
+}
+
+async function loadThumb(el) {
+  const id = el.dataset.id, img = $('img', el);
+  if (isLocal(id)) { const o = OUT.find((x) => x.id === id); if (o) img.src = 'data:image/jpeg;base64,' + o.b64; return; }
+  if (!thumbCache[id]) { try { const d = await api('photo', { id }); thumbCache[id] = 'data:image/jpeg;base64,' + d.data; } catch { return; } }
+  img.src = thumbCache[id];
+}
+
+let pending = null, storageAsked = false;
+async function act(btn, def) {
+  const what = btn.dataset.act, slot = +btn.closest('.slot').dataset.s;
+  if (what === 'cam' || what === 'gal') { pending = { slot, item:def.item }; $(what === 'cam' ? '#cam' : '#gal').click(); return; }
+  try {
+    if (what === 'cap') {
+      const key = `${def.item}:${slot}`, base = def.slots[slot].label;
+      const v = await askText({ title:'Edit keterangan foto', msg:'Teks ini dicetak berwarna merah di bawah foto pada laporan. Kosongkan untuk kembali ke teks asli.', value:S.captions[key] || base });
+      if (v === null) return;
+      const text = v.trim() === base ? '' : v.trim();
+      await outAdd({ type:'caption', item:def.item, slot, text });
+      if (text) S.captions[key] = text; else delete S.captions[key];
+    } else if (what === 'del') {
+      if (!(await ask({ title:'Hapus foto ini?', msg:'Foto akan dihapus dari laporan.', ok:'Hapus', danger:true }))) return;
+      const pid = btn.dataset.pid;
+      if (isLocal(pid)) await outDel(pid); else await outAdd({ type:'delPhoto', photoId:pid });
+    }
+    render();
+  } catch (e) { toast(e.message, 'err'); }
+}
+
+async function handleFile(f, fromCamera) {
+  if (!f || !pending) return;
+  const { slot, item: itemNo } = pending;
+  const when0 = fromCamera ? new Date() : new Date(f.lastModified || Date.now());   // gallery: file time (editable)
+  try {
+    const canvas = await busy('Membaca foto…', () => loadCanvas(f));
+    const r = await stage(canvas, when0);
+    if (!r) return;
+    const c = await toJpeg(stamped(r.canvas, r.when));
+    await outAdd({ type:'photo', item:itemNo, slot, b64:c.b64, photoTime:r.when.toISOString() });
+    if (!storageAsked && navigator.storage && navigator.storage.persist) { storageAsked = true; navigator.storage.persist().catch(() => {}); }
+    toast('Foto tersimpan di HP', 'ok');
+  } catch (e) { toast('Gagal: ' + e.message, 'err'); }
+  render();
+}
+$('#cam').onchange = (e) => { handleFile(e.target.files[0], true); e.target.value = ''; };
+$('#gal').onchange = (e) => { handleFile(e.target.files[0], false); e.target.value = ''; };
+
+/* ---------- FSC actions ---------- */
+/** Save = check (works offline): lists what the officer still lacks and how much is not yet in the cloud. */
+function checkAll() {
+  S.lastSaved = hhmm();
+  const ph = allPhotos();
+  const mine = S.items.filter((i) => ph.some((p) => p.item === i.item && p.officer === S.officer) || (S.answers[i.item] && S.answers[i.item].officer === S.officer));
+  const problems = mine.map((i) => {
+    const missing = i.slots.filter((_, k) => !photosOf(i.item, k).length).length;
+    return { i, missing, unanswered: !S.answers[i.item] };
+  }).filter((x) => x.missing || x.unanswered);
+  const nPhotos = ph.filter((p) => p.officer === S.officer).length, pc = pendingCount();
+  const rows = problems.map((x) => `<button class="row-i" style="width:100%;text-align:left" data-go="${esc(x.i.item)}" data-w="${x.i.week}"><span class="no">${esc(x.i.item)}</span><span class="tx">${[x.missing ? x.missing + ' slot belum ada foto' : '', x.unanswered ? 'belum dijawab' : ''].filter(Boolean).join(' · ')}</span>${ic('chev')}</button>`).join('');
+  const m = sheet(`<h3>${problems.length ? 'Ada yang belum lengkap' : 'Semua lengkap'}</h3>
+    <p>Anda mengerjakan ${nPhotos} foto di ${mine.length} item.${problems.length ? '' : ' Tidak ada item yang kurang foto atau belum dijawab.'}</p>
+    <p>${pc.all ? `<b>${pc.photos} foto dan ${pc.other} perubahan masih di HP.</b> Tekan Upload ke cloud kalau sudah lengkap.` : 'Semuanya sudah ada di cloud.'}</p>${rows}
+    ${pc.all ? '<button class="btn" id="up" style="margin-top:12px">Upload ke cloud sekarang</button>' : ''}
+    <button class="btn ghost" id="ok" style="margin-top:10px">Tutup</button>`);
+  $('#ok', m).onclick = () => m.remove();
+  if ($('#up', m)) $('#up', m).onclick = () => { m.remove(); syncOut(); };
+  $$('[data-go]', m).forEach((b) => b.onclick = () => { m.remove(); go('item', { w:+b.dataset.w, item:b.dataset.go }); });
+  render();
+}
+async function loadAll() {
+  try {
+    await busy('Memuat data terbaru…', async () => { Object.keys(thumbCache).forEach((k) => delete thumbCache[k]); await refresh(); });
+    toast('Data terbaru dimuat', 'ok'); render();
+  } catch (e) { toast(e.message, 'err'); }
+}
+async function downloadPdf() {
+  if (OUT.length) {
+    if (!(await ask({ title:'Masih ada yang di HP', msg:`${pendingCount().photos} foto dan ${pendingCount().other} perubahan belum di cloud. PDF dibuat dari data cloud, jadi upload dulu.`, ok:'Upload dulu' }))) return;
+    if (!(await syncOut()) ) return;
+  }
+  try {
+    await busy('Membuat PDF… (bisa 1–2 menit)', async () => {
+      const d = await api('preview');
+      const bytes = Uint8Array.from(atob(d.pdf), (c) => c.charCodeAt(0));
+      const url = URL.createObjectURL(new Blob([bytes], { type:'application/pdf' }));
+      const a = document.createElement('a'); a.href = url; a.download = `FSC ${S.period ? S.period.label : ''} Week ${S.period ? S.period.activeWeek : ''} - ${S.officer}.pdf`;
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 60000);
+    });
+    toast('PDF dibuat dan diunduh', 'ok');
+  } catch (e) { toast(e.message, 'err'); }
+}
+
+/* ---------- master ---------- */
+const mb = (n) => (n / 1048576).toFixed(1) + ' MB';
+function nextFriday() {
+  const d = new Date(); d.setDate(d.getDate() + ((5 - d.getDay() + 7) % 7));
+  return toLocalInput(d).slice(0, 10);
+}
+
+async function master(t) {
+  $('#title').textContent = 'Master';
+  main.innerHTML = '<div class="card mute" style="text-align:center">Memuat…</div>';
+  let d = null;
+  try { d = await api('recap'); S.period = d.period; }
+  catch (e) { if (!/periode aktif/i.test(e.message)) { main.innerHTML = ''; return toast(e.message, 'err'); } S.period = null; }
+  if (!S.period) return masterCreate();
+
+  const p = S.period, last = p.activeWeek >= 4, logged = d.weekLog.map((x) => x.week);
+  main.innerHTML = `<div class="hero"><p>${esc(p.title)} · ${esc(p.code)}</p><h2>${esc(p.label)}</h2><p style="margin-top:6px">Week ${p.activeWeek} aktif · inspeksi ${esc(dateText(p.date))}</p></div>
+    <div class="card"><div style="display:flex;justify-content:space-between;align-items:center"><b>Info laporan</b><button class="btn ghost sm" id="edit" style="width:auto">${ic('edit')} Ubah</button></div>
+      <table style="margin-top:6px"><tr><td class="mute">Nama kapal</td><td>${esc(p.shipName)}</td></tr><tr><td class="mute">Inspection by</td><td>${esc(p.inspector)}</td></tr><tr><td class="mute">Tanggal inspeksi</td><td>${esc(dateText(p.date))}</td></tr></table></div>
+    <div class="card"><table><tr><th>Item</th><th>Officer</th><th>Hasil</th><th>Foto</th></tr>
+      ${d.items.filter((i) => i.photos || i.answer).map((i) => `<tr><td><b>${esc(i.item)}</b></td><td>${esc(i.officers.join(', '))}</td><td>${i.answer ? `<span class="chip ${i.answer}">${esc(i.answer)}</span>` : '-'}${i.remarks ? '<br><span class="mute small">' + esc(i.remarks) + '</span>' : ''}</td><td>${i.photos}/${i.slots}</td></tr>`).join('') || '<tr><td colspan="4" class="mute">Belum ada isian</td></tr>'}</table>
+      <p class="mute small">Terjawab: ${d.items.filter((i) => i.answer).length} dari ${d.items.length} item${logged.length ? ' · week selesai: ' + logged.join(', ') : ''}</p></div>
+    <button class="btn" id="gen">${ic('pdf')} Ambil file (Word + PDF)</button><div id="out" style="margin-top:14px"></div>
+    <div class="sect">Alur periode</div>
+    <button class="btn ghost" id="fin" style="margin-bottom:10px">${ic('check')} Finish Week ${p.activeWeek}</button>
+    ${logged.length ? `<button class="btn ghost" id="undo" style="margin-bottom:10px">Batalkan Finish Week ${logged[logged.length - 1]}</button>` : ''}
+    <button class="btn ghost" id="end" style="color:var(--bad)">End periode</button>`;
+  $('#edit').onclick = () => masterEdit(p);
+  $('#gen').onclick = async () => {
+    try {
+      const g = await busy('Menyusun file… (bisa 1–3 menit)', () => api('generate'));
+      $('#out').innerHTML = `<div class="card"><b>File siap</b><p class="mute small" style="margin:6px 0 12px">Tersimpan di folder <b>${esc(g.name)}</b> di Google Drive.</p>
+        <a class="btn" style="text-decoration:none" href="${esc(g.pdf)}" target="_blank" rel="noopener">${ic('pdf')} Buka PDF (${mb(g.pdfBytes)})</a>
+        <a class="btn ghost" style="text-decoration:none;margin-top:10px" href="${esc(g.docx)}" target="_blank" rel="noopener">Word (.docx) ${mb(g.docxBytes)}</a>
+        <a class="btn ghost" style="text-decoration:none;margin-top:10px" href="${esc(g.folder)}" target="_blank" rel="noopener">Buka folder</a></div>`;
+    } catch (e) { toast(e.message, 'err'); }
+  };
+  $('#fin').onclick = () => masterFinish(p, last);
+  if ($('#undo')) $('#undo').onclick = async () => {
+    const w = logged[logged.length - 1];
+    if (!(await ask({ title:`Batalkan Finish Week ${w}?`, msg:p.activeWeek > w ? `Kembali ke Week ${w}. Week ${p.activeWeek} ditutup lagi untuk officer; foto yang sudah masuk tetap tersimpan.` : `Week ${w} dibuka lagi.`, ok:'Ya, batalkan', danger:true }))) return;
+    try { await busy('Membatalkan…', () => api('undoFinish')); toast(`Kembali ke Week ${w}`, 'ok'); master(t); } catch (e) { toast(e.message, 'err'); }
+  };
+  $('#end').onclick = async () => {
+    if (!(await ask({ title:'End periode?', msg:`${p.label} ditutup dan tidak bisa diisi lagi. Pastikan laporan Week 4 sudah terkirim. Data dan file tetap tersimpan di Drive.`, ok:'End periode', danger:true }))) return;
+    try { await busy('Menutup…', () => api('endPeriod')); S.period = null; toast('Periode ditutup', 'ok'); master(t); } catch (e) { toast(e.message, 'err'); }
+  };
+}
+
+function masterCreate() {
+  const forms = S.forms;
+  main.innerHTML = `<div class="hero"><p>Belum ada periode aktif</p><h2>Create new</h2><p style="margin-top:6px">Pilih form dari kantor, lalu isi tiga data laporan.</p></div>
+    <div class="card"><label style="margin-top:0">Periode (form dari kantor)</label>
+      <select class="f" id="cf">${forms.map((f) => `<option value="${esc(f.formId)}">${esc(f.label)} · ${esc(f.code)}</option>`).join('')}</select>
+      <label>Nama kapal</label><input class="f" id="cs" value="${esc(S.defaults.shipName || '')}" autocomplete="off">
+      <label>Nama inspektur (Inspection by)</label><input class="f" id="ci" value="${esc(S.defaults.inspector || '')}" autocomplete="off">
+      <label>Tanggal inspeksi Week 1</label><input class="f" id="cd" type="date" value="${nextFriday()}">
+      <button class="btn" id="cn" style="margin-top:16px">Create new</button></div>`;
+  $('#cn').onclick = async () => {
+    try {
+      await busy('Membuat periode…', () => api('createPeriod', { formId:$('#cf').value, shipName:$('#cs').value, inspector:$('#ci').value, date:$('#cd').value }));
+      toast('Periode dibuat. Week 1 aktif.', 'ok'); master();
+    } catch (e) { toast(e.message, 'err'); }
+  };
+}
+
+function masterEdit(p) {
+  const m = sheet(`<h3>Info laporan</h3><p>Dipakai di kolom info bagian atas laporan.</p>
+    <label style="margin-top:0">Nama kapal</label><input class="f" id="es" value="${esc(p.shipName)}">
+    <label>Nama inspektur (Inspection by)</label><input class="f" id="ei" value="${esc(p.inspector)}">
+    <label>Tanggal inspeksi Week ${p.activeWeek}</label><input class="f" id="ed" type="date" value="${esc(p.date || today())}">
+    <div class="two" style="margin-top:14px"><button class="btn ghost" id="n">Batal</button><button class="btn" id="y">Simpan</button></div>`);
+  $('#n', m).onclick = () => m.remove();
+  $('#y', m).onclick = async () => {
+    try { await busy('Menyimpan…', () => api('setHeader', { shipName:$('#es', m).value, inspector:$('#ei', m).value, date:$('#ed', m).value })); m.remove(); master(); }
+    catch (e) { toast(e.message, 'err'); }
+  };
+}
+
+function masterFinish(p, last) {
+  const m = sheet(last
+    ? `<h3>Finish Week 4</h3><p>Pastikan laporan sudah diambil dan dikirim ke kantor. Setelah ini tekan <b>End periode</b> untuk menutup ${esc(p.label)}.</p><div class="two"><button class="btn ghost" id="n">Batal</button><button class="btn" id="y">Finish</button></div>`
+    : `<h3>Finish Week ${p.activeWeek}?</h3><p>Pastikan file Week ${p.activeWeek} sudah diambil dan dikirim ke kantor. Lalu Week ${p.activeWeek + 1} dibuka untuk officer, dengan folder baru di Drive.</p>
+       <label style="margin-top:0">Tanggal inspeksi Week ${p.activeWeek + 1}</label><input class="f" id="fd" type="date" value="${nextFriday()}">
+       <div class="two" style="margin-top:14px"><button class="btn ghost" id="n">Batal</button><button class="btn" id="y">Ya, lanjut Week ${p.activeWeek + 1}</button></div>`);
+  $('#n', m).onclick = () => m.remove();
+  $('#y', m).onclick = async () => {
+    try {
+      const r = await busy('Memproses…', () => api('finishWeek', { date: last ? '' : $('#fd', m).value }));
+      m.remove(); toast(r.last ? 'Week 4 selesai. Tekan End periode.' : `Week ${r.period.activeWeek} dibuka`, 'ok'); master();
+    } catch (e) { toast(e.message, 'err'); }
+  };
+}
+
+if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost')) navigator.serviceWorker.register('sw.js').catch(() => {});
+history.replaceState({ n:1 }, '');
+window.addEventListener('online', () => { if (store.get('auto') === '1' && OUT.length && S.role === 'officer') syncOut(true); });
+const savedCode = store.get('code');
+outLoad().then(() => { if (savedCode) signIn(savedCode, true, true); else render(); });
+</script>
+</body>
+</html>
