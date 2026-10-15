@@ -141,9 +141,62 @@
   .hide { display:none !important; }
   table { width:100%; border-collapse:collapse; } td, th { text-align:left; padding:9px 4px; border-bottom:1px solid var(--line); font-size:13.5px; vertical-align:top; } th { color:var(--mute); font-size:12px; text-transform:uppercase; letter-spacing:.05em; }
   .banner { background:var(--soft); background:color-mix(in srgb,var(--warn) 16%,transparent); color:var(--warn); border-radius:14px; padding:11px 14px; font-weight:650; font-size:14px; margin-bottom:14px; display:flex; gap:8px; align-items:center; }
+  /* ---------- intro animation ---------- */
+  #splash { position:fixed; inset:0; z-index:200; overflow:hidden; display:grid; place-items:center; background:radial-gradient(120% 90% at 50% 20%, #1a4fb8 0%, #0e2f6e 45%, #08142e 100%); color:#fff; cursor:pointer; animation:spOut .5s ease 2.9s forwards; }
+  #splash.skip { animation:spOut .25s ease forwards; }
+  #splash .sp-c { display:grid; justify-items:center; gap:18px; margin-top:-8vh; }
+  #splash .sp-logo { width:104px; height:104px; border-radius:30px; display:grid; place-items:center; background:linear-gradient(135deg,#1668e3,#0ea5a4); box-shadow:0 18px 50px rgba(14,165,164,.45), inset 0 0 0 1px rgba(255,255,255,.25); animation:spPop .7s cubic-bezier(.2,1.4,.4,1) .15s both; }
+  #splash .sp-logo svg { width:58px; height:58px; fill:none; stroke:#fff; stroke-width:1.9; stroke-linecap:round; stroke-linejoin:round; }
+  #splash .d1 { stroke-dasharray:200; stroke-dashoffset:200; animation:spDraw .8s ease .55s forwards; }
+  #splash .d2 { stroke-dasharray:12; stroke-dashoffset:12; animation:spDraw .45s ease 1.25s forwards; }
+  #splash .sp-t { font-size:30px; font-weight:800; letter-spacing:-.4px; display:flex; gap:0; }
+  #splash .sp-t span { opacity:0; transform:translateY(14px); animation:spUp .5s ease forwards; }
+  #splash .sp-s { font-size:14px; letter-spacing:.14em; text-transform:uppercase; color:rgba(255,255,255,.7); opacity:0; animation:spUp .6s ease 1.55s forwards; }
+  #splash .sp-sea { position:absolute; left:0; right:0; bottom:0; height:34vh; pointer-events:none; }
+  #splash .sp-w { position:absolute; left:0; bottom:0; width:200%; height:100%; }
+  #splash .w1 { animation:spWave 6s linear infinite; opacity:.35; } #splash .w2 { animation:spWave 4s linear infinite reverse; opacity:.55; } #splash .w3 { animation:spWave 3s linear infinite; opacity:1; }
+  #splash .sp-ship { position:absolute; bottom:calc(11vh + 6px); left:-120px; width:110px; animation:spShip 3.2s ease-in-out .2s forwards, spBob 1.6s ease-in-out infinite; }
+  #splash .sp-bar { position:absolute; left:50%; bottom:max(26px, env(safe-area-inset-bottom)); width:120px; height:3px; margin-left:-60px; border-radius:3px; background:rgba(255,255,255,.2); overflow:hidden; }
+  #splash .sp-bar i { display:block; height:100%; width:100%; background:#fff; transform:scaleX(0); transform-origin:left; animation:spBar 2.7s ease .15s forwards; }
+  #splash .sp-n { font-size:22px; font-weight:800; letter-spacing:.32em; padding-left:.32em; color:#fff; opacity:0; animation:spUp .6s ease 1.85s forwards; text-shadow:0 2px 14px rgba(14,165,164,.6); margin-top:-6px; }
+  @keyframes spPop { from { opacity:0; transform:scale(.5) rotate(-8deg); } to { opacity:1; transform:none; } }
+  @keyframes spDraw { to { stroke-dashoffset:0; } }
+  @keyframes spUp { to { opacity:1; transform:none; } }
+  @keyframes spWave { from { transform:translateX(0); } to { transform:translateX(-50%); } }
+  @keyframes spShip { from { left:-120px; } to { left:calc(100% + 20px); } }
+  @keyframes spBob { 0%,100% { margin-bottom:0; } 50% { margin-bottom:4px; } }
+  @keyframes spBar { to { transform:scaleX(1); } }
+  @keyframes spOut { to { opacity:0; transform:scale(1.04); visibility:hidden; } }
+  @media (prefers-reduced-motion: reduce) { #splash *, #splash { animation-duration:.01s !important; animation-delay:0s !important; } #splash { animation:spOut .3s ease .9s forwards !important; } #splash .sp-t span, #splash .sp-s { opacity:1; transform:none; } #splash .d1,#splash .d2 { stroke-dashoffset:0; } }
 </style>
 </head>
 <body>
+<div id="splash" aria-hidden="true">
+  <div class="sp-c">
+    <div class="sp-logo"><svg viewBox="0 0 24 24"><path class="d1" d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect class="d1" x="8" y="2" width="8" height="4" rx="1"/><path class="d2" d="M9 14l2 2 4-4"/></svg></div>
+    <div class="sp-t" id="sp-t"></div>
+    <div class="sp-s">Laporan mingguan kapal</div>
+    <div class="sp-n" id="sp-n"></div>
+  </div>
+  <svg class="sp-ship" viewBox="0 0 120 40"><path d="M4 22h112l-12 14H18z" fill="#e8eef9"/><path d="M4 22h112l-2 3H6z" fill="#d93f3f"/><rect x="82" y="8" width="20" height="14" rx="2" fill="#fff"/><rect x="86" y="12" width="12" height="4" rx="1" fill="#1668e3"/><rect x="90" y="2" width="6" height="7" rx="1" fill="#f59e0b"/><rect x="14" y="17" width="64" height="5" rx="1" fill="#8fa3c4"/></svg>
+  <div class="sp-sea">
+    <svg class="sp-w w1" viewBox="0 0 800 100" preserveAspectRatio="none"><path d="M0 40 Q50 10 100 40 T200 40 T300 40 T400 40 T500 40 T600 40 T700 40 T800 40 V100 H0z" fill="#4d90f5"/></svg>
+    <svg class="sp-w w2" viewBox="0 0 800 100" preserveAspectRatio="none"><path d="M0 55 Q50 25 100 55 T200 55 T300 55 T400 55 T500 55 T600 55 T700 55 T800 55 V100 H0z" fill="#2c78e0"/></svg>
+    <svg class="sp-w w3" viewBox="0 0 800 100" preserveAspectRatio="none"><path d="M0 70 Q50 45 100 70 T200 70 T300 70 T400 70 T500 70 T600 70 T700 70 T800 70 V100 H0z" fill="#0b2a63"/></svg>
+  </div>
+  <div class="sp-bar"><i></i></div>
+</div>
+<script>(function(){try{if(sessionStorage.getItem('splash')){var s=document.getElementById('splash');if(s)s.remove();return;}sessionStorage.setItem('splash','1');}catch(e){}
+  var sp = document.getElementById('splash'); if (!sp) return;
+  var n = document.getElementById('sp-n'); var nm = 'TITANIA'; try { nm = localStorage.getItem('ship') || nm; } catch (e) {} n.textContent = nm.toUpperCase();
+  var t = document.getElementById('sp-t'); 'Weekly Report'.split('').forEach(function (ch, i) {
+    var s = document.createElement('span'); s.textContent = ch === ' ' ? ' ' : ch; s.style.animationDelay = (0.85 + i * 0.045) + 's'; t.appendChild(s);
+  });
+  var gone = function () { if (sp.parentNode) sp.parentNode.removeChild(sp); };
+  sp.addEventListener('animationend', function (e) { if (e.animationName === 'spOut') gone(); });
+  sp.addEventListener('click', function () { sp.classList.add('skip'); });
+})();</script>
+
 <header class="bar" id="bar">
   <button class="ibtn hide" id="back" aria-label="Kembali"></button>
   <h1 id="title">Weekly Report</h1>
@@ -547,6 +600,7 @@ async function signIn(code, remember, auto) {
     const d = await busy('Memeriksa…', () => api('login'));
     Object.assign(S, { role:d.role, officers:d.officers, period:d.period, forms:d.forms || [], defaults:d.defaults || {} });
     store.set('code', remember ? code : '');
+    if (d.period && d.period.shipName) store.set('ship', d.period.shipName);
     try { idb.setMeta('login', { code, role:d.role, officers:d.officers, period:d.period, forms:d.forms || [], defaults:d.defaults || {} }); } catch {}
     if (d.role === 'master') return reset('master');
     const saved = store.get('officer');
