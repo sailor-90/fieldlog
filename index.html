@@ -54,6 +54,8 @@
   .btn:active, .tile:active, .mod:active, .wk:active, .row-i:active { transform:scale(.985); }
   .two { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
   label { display:block; font-size:13px; color:var(--mute); margin:12px 0 6px; font-weight:600; }
+  textarea.f { width:100%; min-height:130px; padding:12px 14px; border:1.5px solid var(--line); border-radius:14px; background:var(--card); color:var(--ink); font:inherit; font-size:16px; line-height:1.45; outline:none; resize:vertical; display:block; }
+  textarea.f:focus, input.f:focus, select.f:focus { border-color:var(--brand); }
   input.f, select.f { width:100%; min-height:50px; padding:0 14px; border:1.5px solid var(--line); border-radius:14px; background:var(--card); font-size:16px; outline:none; }
   input.f:focus, select.f:focus { border-color:var(--brand); }
   input.f:disabled { opacity:.55; }
@@ -264,13 +266,14 @@ async function outAdd(o) {
   // answers and captions: only the latest value per target matters
   const same = (x) => x.type === o.type && ((o.type === 'answer' && x.item === o.item) || (o.type === 'caption' && x.item === o.item && x.slot === o.slot));
   for (const x of OUT.filter(same)) await outDel(x.id);
-  const full = { id:(o.type === 'photo' ? 'L' : 'Q') + Date.now().toString(36) + Math.random().toString(36).slice(2, 7), t:Date.now(), periodId:pid, officer:S.officer, ...o };
+  const full = { id:(o.type === 'photo' || o.type === 'wphoto' ? 'L' : 'Q') + Date.now().toString(36) + Math.random().toString(36).slice(2, 7), t:Date.now(), periodId:pid, officer:S.officer, ...o };
   OUT.push(full); await outPut(full);
   if (store.get('auto') === '1' && navigator.onLine) syncOut(true);
   return full;
 }
 async function outLoad() { try { OUT = (await idb.ops()) || []; } catch { OUT = []; } }
-const pendingCount = () => ({ photos:OUT.filter((o) => o.type === 'photo').length, other:OUT.filter((o) => o.type !== 'photo').length, all:OUT.length });
+const isPhotoOp = (o) => o.type === 'photo' || o.type === 'wphoto';
+const pendingCount = () => ({ photos:OUT.filter(isPhotoOp).length, other:OUT.filter((o) => !isPhotoOp(o)).length, all:OUT.length });
 const isLocal = (id) => String(id)[0] === 'L';
 const delIds = () => new Set(OUT.filter((o) => o.type === 'delPhoto' || (o.type === 'photo' && o.replaceId)).map((o) => o.photoId || o.replaceId));
 function applyOut() {                                      // lay the pending answers/captions over what the cloud returned
@@ -283,6 +286,15 @@ function applyOut() {                                      // lay the pending an
 function cacheState() { try { idb.setMeta('state', { period:S.period, items:S.items, photos:S.photos, answers:S.answers0, captions:S.captions0, officer:S.officer, officers:S.officers, role:S.role, forms:S.forms, defaults:S.defaults, code:S.code }); } catch {} }
 let syncing = false;
 async function sendOp(o) {
+  if (o.type === 'wphoto' || o.type === 'wday' || o.type === 'wdel') {              // weekly deck & engine report
+    if (!S.w || !S.w.report || o.periodId !== 'W' + S.w.report.reportId) throw new Error('Isian ini milik laporan mingguan lain');
+    if (o.type === 'wphoto') {
+      const d = await api('wUpload', { section:o.section, day:o.day, data:o.b64, base:o.base, replaceId:o.replaceId, photoTime:o.photoTime, officer:o.officer });
+      thumbCache[d.id] = 'data:image/jpeg;base64,' + o.b64;
+    } else if (o.type === 'wday') await api('wSetDay', { section:o.section, day:o.day, text:o.text, na:o.na, officer:o.officer });
+    else await api('wDeletePhoto', { id:o.photoId, officer:o.officer });
+    return;
+  }
   if (S.period && o.periodId && o.periodId !== S.period.periodId) throw new Error('Isian ini milik periode lain');
   if (o.type === 'photo') {
     const d = await api('upload', { item:o.item, slot:o.slot, data:o.b64, base:o.base, replaceId:o.replaceId, photoTime:o.photoTime, officer:o.officer });
@@ -295,6 +307,7 @@ async function sendOp(o) {
 async function syncOut(silent) {
   if (syncing || !OUT.length) return true;
   syncing = true; let ok = 0, fail = '';
+  if (!S.w && OUT.some((o) => /^w(photo|day|del)$/.test(o.type))) { try { await wRefresh(); } catch {} }
   const q = OUT.slice().sort((a, b) => a.t - b.t), total = q.length;
   const run = async () => {
     for (const o of q) {
@@ -303,7 +316,10 @@ async function syncOut(silent) {
     }
   };
   try { if (silent) await run(); else await busy('Mengunggah…', run); } finally { syncing = false; }
-  if (ok) { try { await refresh(); } catch {} }
+  if (ok) {
+    if (q.some((o) => o.type[0] !== 'w' && o.type !== 'wphoto')) { try { await refresh(); } catch {} }
+    if (q.some((o) => /^w(photo|day|del)$/.test(o.type))) { try { await wRefresh(); } catch {} }
+  }
   if (!silent || fail) {
     if (fail) toast(`${ok} terkirim, ${total - ok} masih di HP. ${/fetch|load failed|network/i.test(fail) ? 'Tidak ada koneksi.' : fail}`, 'err');
     else toast(`${ok} data terkirim ke cloud`, 'ok');
@@ -368,7 +384,7 @@ function render() {
   const t = cur();
   $('#back').classList.toggle('hide', stack.length < 2);
   $('#logout').classList.toggle('hide', !['home', 'master'].includes(t.view));
-  ({ login, who, home, soon, fsc, week, item, master }[t.view])(t);
+  ({ login, who, home, soon, fsc, week, item, master, wk, wday, wcrew }[t.view])(t);
 }
 
 /* ---------- photo pipeline: keep resolution (capped), stamp date/time inside the photo, cut JPEG quality ---------- */
@@ -657,14 +673,22 @@ function home() {
     <div style="text-align:center;margin:-4px 0 6px"><button id="chg" class="btn ghost sm" style="width:auto">Bukan Anda? Ganti nama</button></div>
     <div class="sect" style="margin-top:6px">Pilih laporan</div>
     <button class="mod" id="m1"><span class="ico" style="background:var(--grad)">${ic('clip', 28)}</span><div><b>FSC Checklist</b><span class="s">${p ? esc(p.title) + ' · ' + esc(p.code) : 'Menunggu master membuat periode baru'}</span></div><span class="go">${ic('chev')}</span></button>
-    <button class="mod" id="m2"><span class="ico" style="background:linear-gradient(135deg,#f59e0b,#ef4444)">${ic('wrench', 28)}</span><div><b>Weekly Deck & Engine Report<span class="tag">Segera</span></b><span class="s">Maintenance report to Owner · dikirim tiap Sabtu</span></div><span class="go">${ic('chev')}</span></button>
+    <button class="mod" id="m2"><span class="ico" style="background:linear-gradient(135deg,#f59e0b,#ef4444)">${ic('wrench', 28)}</span><div><b>Weekly Deck & Engine Report</b><span class="s">Laporan perawatan deck &amp; mesin · dikirim tiap Sabtu</span></div><span class="go">${ic('chev')}</span></button>
     <p class="mute small" style="text-align:center;margin-top:22px">Pengaturan foto: ${CFG.MAX_SIDE} px · kualitas ${CFG.JPEG_QUALITY}</p>`;
   $('#m1').onclick = async () => {
     try { await busy('Memuat…', refresh); } catch (e) { if (!S.items.length) { toast('Tidak ada koneksi dan belum ada data tersimpan.', 'err'); return; } toast('Offline: memakai data terakhir di HP', 'ok'); }
     if (!S.period) return toast('Belum ada periode aktif. Hubungi master.');
     go('fsc');
   };
-  $('#m2').onclick = () => go('soon');
+  $('#m2').onclick = async () => {
+    try { await busy('Memuat…', wRefresh); }
+    catch (e) {
+      let c = null; try { c = await idb.getMeta('wstate'); } catch {}
+      if (!c) { toast('Tidak ada koneksi dan belum ada data tersimpan.', 'err'); return; }
+      S.w = c; toast('Offline: memakai data terakhir di HP', 'ok');
+    }
+    go('wk');
+  };
   $('#chg').onclick = () => { store.set('officer', ''); reset('who'); };
 }
 
@@ -803,7 +827,7 @@ async function act(btn, def) {
 
 async function handleFile(f, fromCamera) {
   if (!f || !pending) return;
-  const { slot, item: itemNo } = pending;
+  const { slot, item: itemNo } = pending, pw = pending.w ? pending : null;
   const when0 = fromCamera ? new Date() : new Date(f.lastModified || Date.now());   // gallery: file time (editable)
   try {
     const canvas = await busy('Membaca foto…', () => loadCanvas(f));
@@ -811,7 +835,8 @@ async function handleFile(f, fromCamera) {
     if (!r) return;
     const c = await toJpeg(stamped(scaleTo(r.canvas, CFG.MAX_SIDE), r.when));
     const base = await toJpeg(scaleTo(r.canvas, 800), .8);          // unstamped copy: lets the date/time and edits be changed while the photo is still on the phone
-    await outAdd({ type:'photo', item:itemNo, slot, b64:c.b64, base:base.b64, photoTime:r.when.toISOString() });
+    if (pw) await outAdd({ type:'wphoto', periodId:wPid(), section:pw.section, day:pw.day, b64:c.b64, base:base.b64, photoTime:r.when.toISOString() });
+    else await outAdd({ type:'photo', item:itemNo, slot, b64:c.b64, base:base.b64, photoTime:r.when.toISOString() });
     if (!storageAsked && navigator.storage && navigator.storage.persist) { storageAsked = true; navigator.storage.persist().catch(() => {}); }
     toast('Foto tersimpan di HP', 'ok');
   } catch (e) { toast('Gagal: ' + e.message, 'err'); }
@@ -957,6 +982,279 @@ function masterFinish(p, last) {
       const r = await busy('Memproses…', () => api('finishWeek', { date: last ? '' : $('#fd', m).value }));
       m.remove(); toast(r.last ? 'Week 4 selesai. Tekan End periode.' : `Week ${r.period.activeWeek} dibuka`, 'ok'); master();
     } catch (e) { toast(e.message, 'err'); }
+  };
+}
+
+/* ---------- weekly deck & engine report (module 2) ---------- */
+const WD = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+const SEC = { deck:'DECK', engine:'MACHINERY SPACES' };
+const W_MAX = 12;
+async function wRefresh() {
+  const d = await api('wState');
+  S.w = { report:d.report, days:d.days || [], photos:d.photos || [], canEdit:d.canEdit, next:d.next, crew:d.crew || [], defaultSigners:d.defaultSigners || {} };
+  try { idb.setMeta('wstate', S.w); } catch {}
+}
+const wRep = () => (S.w && S.w.report) || null;
+const wPid = () => (wRep() ? 'W' + wRep().reportId : '');
+const wOps = (type) => OUT.filter((o) => o.type === type && o.periodId === wPid());
+function wDayOf(sec, day) {
+  const b = S.w.days.find((x) => x.section === sec && x.day === day) || { text:'', na:false };
+  const op = OUT.find((o) => o.type === 'wday' && o.periodId === wPid() && o.section === sec && o.day === day);
+  return op ? { text:op.text, na:op.na } : { text:b.text, na:b.na };
+}
+function wPhotosOf(sec, day) {
+  const gone = new Set(OUT.filter((o) => o.periodId === wPid() && (o.type === 'wdel' || (o.type === 'wphoto' && o.replaceId))).map((o) => o.photoId || o.replaceId));
+  const cloud = S.w.photos.filter((p) => p.section === sec && p.day === day && !gone.has(p.id)).sort((a, b) => a.idx - b.idx);
+  const loc = wOps('wphoto').filter((o) => o.section === sec && o.day === day).sort((a, b) => a.t - b.t).map((o) => ({ id:o.id, section:sec, day, local:true, hasBase:!!o.base }));
+  return cloud.concat(loc);
+}
+async function loadWThumb(el) {
+  const id = el.dataset.id, img = $('img', el);
+  if (isLocal(id)) { const o = OUT.find((x) => x.id === id); if (o) img.src = 'data:image/jpeg;base64,' + o.b64; return; }
+  if (!thumbCache[id]) { try { const d = await api('wPhoto', { id }); thumbCache[id] = 'data:image/jpeg;base64,' + d.data; } catch { return; } }
+  img.src = thumbCache[id];
+}
+const wdLabel = (r, d) => `${WD[d]} · ${dateText(r.dayDates[d])}`;
+
+function wk(t) {
+  $('#title').textContent = 'Weekly Deck & Engine';
+  const w = S.w, r = wRep(), master = S.role === 'master';
+  if (!r) {
+    if (!master) { main.innerHTML = '<div class="card mute" style="text-align:center">Belum ada laporan mingguan aktif.<br>Hubungi master untuk membuatnya.</div>'; return; }
+    return wCreate();
+  }
+  const pc = pendingCount();
+  const days = ['deck', 'engine'].map((sec) => {
+    const rows = [0, 1, 2, 3, 4, 5, 6].map((d) => {
+      const dd = wDayOf(sec, d), ph = wPhotosOf(sec, d);
+      const chips = [dd.na && !ph.length ? '<span class="chip NA">NA</span>' : '', ph.length ? `<span class="chip">${ph.length} foto</span>` : '', dd.text.trim() ? '<span class="chip Yes">teks</span>' : ''].join('');
+      return `<div class="row-i" data-s="${sec}" data-d="${d}"><span class="no" style="min-width:52px">${WD[d].slice(0, 3)}</span><span class="tx">${esc(dateText(r.dayDates[d]))}</span><span style="display:flex;gap:4px">${chips || '<span class="small mute">kosong</span>'}</span></div>`;
+    }).join('');
+    return `<div class="sect">${SEC[sec]}${w.canEdit[sec] ? '' : ' · hanya lihat'}</div>${rows}`;
+  }).join('');
+  const sg = r.signers, sgRow = (k, l) => `<tr><td class="mute">${l}</td><td>${sg[k] ? esc(sg[k].name) + (sg[k].hasSig ? '' : ' <span class="small mute">(tanpa ttd)</span>') : '<span class="mute">-</span>'}</td></tr>`;
+  main.innerHTML = `<div class="hero"><p>Weekly Deck &amp; Engine Maintenance Report</p><h2>No. ${r.no}</h2><p style="margin-top:6px">Sabtu ${esc(r.dateText)}</p></div>
+    <div class="sync ${pc.all ? 'pend' : ''}"><div style="flex:1"><b>${pc.all ? `${pc.photos} foto · ${pc.other} perubahan belum diupload` : 'Semua sudah di cloud'}</b><small>${pc.all ? 'Aman tersimpan di HP. Upload kalau sudah lengkap.' : 'Tidak ada yang menunggu.'}</small></div>${pc.all ? `<button class="btn sm" id="upl" style="width:auto">${ic('send')} Upload</button>` : ''}</div>
+    ${days}
+    ${master ? `<div class="sect">Master</div>
+      <div class="card"><div style="display:flex;justify-content:space-between;align-items:center"><b>Tanda tangan di laporan</b><button class="btn ghost sm" id="wsg" style="width:auto">${ic('edit')} Atur</button></div>
+        <table style="margin-top:6px">${sgRow('master', 'Master')}${sgRow('co', 'Chief Officer')}${sgRow('ce', 'Chief Engineer')}${sgRow('e2', '2nd Engineer')}</table></div>
+      <button class="btn ghost" id="wcr" style="margin-bottom:10px">Daftar kru &amp; tanda tangan</button>
+      <button class="btn ghost" id="whd" style="margin-bottom:10px">${ic('edit')} Ubah nomor / tanggal laporan</button>
+      <button class="btn" id="wgen">${ic('pdf')} Ambil file (Word + PDF)</button><div id="wout" style="margin-top:14px"></div>
+      <button class="btn ghost" id="wfin" style="margin-top:14px">${ic('check')} Selesai (laporan sudah dikirim)</button>` : ''}`;
+  $$('.row-i').forEach((x) => x.onclick = () => go('wday', { sec:x.dataset.s, day:+x.dataset.d }));
+  if ($('#upl')) $('#upl').onclick = () => syncOut();
+  if (!master) return;
+  $('#wsg').onclick = () => wSigners();
+  $('#wcr').onclick = () => go('wcrew');
+  $('#whd').onclick = () => wHeaderEdit();
+  $('#wgen').onclick = async () => {
+    if (OUT.length && !(await ask({ title:'Masih ada yang di HP', msg:'Laporan dibuat dari data di cloud. Upload dulu supaya isian terbaru ikut.', ok:'Upload dulu' }))) return;
+    if (OUT.length && !(await syncOut())) return;
+    try {
+      const g = await busy('Menyusun file… (bisa 1–3 menit)', () => api('wGenerate'));
+      $('#wout').innerHTML = `<div class="card"><b>File siap</b><p class="mute small" style="margin:6px 0 12px">${g.pages} halaman · tersimpan di folder <b>${esc(g.name)}</b> di Google Drive.</p>
+        <a class="btn" style="text-decoration:none" href="${esc(g.pdf)}" target="_blank" rel="noopener">${ic('pdf')} Buka PDF (${mb(g.pdfBytes)})</a>
+        <a class="btn ghost" style="text-decoration:none;margin-top:10px" href="${esc(g.docx)}" target="_blank" rel="noopener">Word (.docx) ${mb(g.docxBytes)}</a>
+        <a class="btn ghost" style="text-decoration:none;margin-top:10px" href="${esc(g.folder)}" target="_blank" rel="noopener">Buka folder</a></div>`;
+    } catch (e) { toast(e.message, 'err'); }
+  };
+  $('#wfin').onclick = async () => {
+    if (!(await ask({ title:'Selesai?', msg:`Laporan No. ${r.no} ditutup. Pastikan file sudah diambil dan dikirim ke kantor. Setelah itu buat laporan minggu berikutnya.`, ok:'Ya, selesai' }))) return;
+    try { await busy('Menutup…', () => api('wFinish')); await wRefresh(); toast('Laporan ditutup', 'ok'); render(); } catch (e) { toast(e.message, 'err'); }
+  };
+}
+
+function crewOptions(sel) {
+  const crew = (S.w.crew || []).filter((c) => c.active || c.crewId === sel);
+  return '<option value="">- pilih -</option>' + crew.map((c) => `<option value="${esc(c.crewId)}" ${c.crewId === sel ? 'selected' : ''}>${esc(c.fullName || c.shortName)}${c.hasSig ? '' : ' (tanpa ttd)'}</option>`).join('');
+}
+function wCreate() {
+  const n = S.w.next, ds = S.w.defaultSigners;
+  main.innerHTML = `<div class="hero"><p>Weekly Deck &amp; Engine Report</p><h2>Create new</h2><p style="margin-top:6px">Isi nomor, tanggal Sabtu, dan penandatangan.</p></div>
+    <div class="card"><label style="margin-top:0">Nomor laporan</label><input class="f" id="wn" type="number" inputmode="numeric" value="${n.no}">
+      <label>Tanggal laporan (hari Sabtu)</label><input class="f" id="wd" type="date" value="${esc(n.date)}">
+      <label>Master</label><select class="f" id="s-master">${crewOptions(ds.master)}</select>
+      <label>Chief Officer</label><select class="f" id="s-co">${crewOptions(ds.co)}</select>
+      <label>Chief Engineer</label><select class="f" id="s-ce">${crewOptions(ds.ce)}</select>
+      <label>2nd Engineer</label><select class="f" id="s-e2">${crewOptions(ds.e2)}</select>
+      <button class="btn" id="wc" style="margin-top:16px">Create new</button></div>
+    <button class="btn ghost" id="wcr2" style="margin-top:10px">Daftar kru &amp; tanda tangan</button>`;
+  $('#wcr2').onclick = () => go('wcrew');
+  $('#wc').onclick = async () => {
+    const date = $('#wd').value;
+    if (date && new Date(date + 'T12:00:00Z').getUTCDay() !== 6 && !(await ask({ title:'Bukan hari Sabtu', msg:'Tanggal itu bukan hari Sabtu. Lanjutkan?', ok:'Lanjut' }))) return;
+    try {
+      const signers = {}; ['master', 'co', 'ce', 'e2'].forEach((k) => { signers[k] = $('#s-' + k).value; });
+      await busy('Membuat laporan…', () => api('wCreate', { no:+$('#wn').value, date, signers }));
+      await wRefresh(); toast('Laporan dibuat', 'ok'); render();
+    } catch (e) { toast(e.message, 'err'); }
+  };
+}
+function wSigners() {
+  const sg = wRep().signers, m = sheet(`<h3>Tanda tangan di laporan</h3><p>Nama dan tanda tangan orangnya tercetak otomatis di kotak atas laporan.</p>
+    ${[['master', 'Master'], ['co', 'Chief Officer'], ['ce', 'Chief Engineer'], ['e2', '2nd Engineer']].map(([k, l]) => `<label>${l}</label><select class="f" id="g-${k}">${crewOptions(sg[k] ? sg[k].crewId : '')}</select>`).join('')}
+    <div class="two" style="margin-top:14px"><button class="btn ghost" id="n">Batal</button><button class="btn" id="y">Simpan</button></div>`);
+  $('#n', m).onclick = () => m.remove();
+  $('#y', m).onclick = async () => {
+    try {
+      const signers = {}; ['master', 'co', 'ce', 'e2'].forEach((k) => { signers[k] = $('#g-' + k, m).value; });
+      await busy('Menyimpan…', () => api('wSetSigners', { signers })); await wRefresh(); m.remove(); render();
+    } catch (e) { toast(e.message, 'err'); }
+  };
+}
+function wHeaderEdit() {
+  const r = wRep(), m = sheet(`<h3>Nomor dan tanggal laporan</h3><p>Tanggal Sabtu menentukan tanggal ke-14 hari di laporan dan nama file.</p>
+    <label style="margin-top:0">Nomor laporan</label><input class="f" id="hn" type="number" inputmode="numeric" value="${r.no}">
+    <label>Tanggal laporan (Sabtu)</label><input class="f" id="hd" type="date" value="${esc(r.date)}">
+    <div class="two" style="margin-top:14px"><button class="btn ghost" id="n">Batal</button><button class="btn" id="y">Simpan</button></div>`);
+  $('#n', m).onclick = () => m.remove();
+  $('#y', m).onclick = async () => {
+    try { await busy('Menyimpan…', () => api('wSetHeader', { no:+$('#hn', m).value, date:$('#hd', m).value })); await wRefresh(); m.remove(); render(); }
+    catch (e) { toast(e.message, 'err'); }
+  };
+}
+
+function wday(t) {
+  const r = wRep(), sec = t.sec, d = t.day, can = S.w.canEdit[sec];
+  $('#title').textContent = WD[d].slice(0, 3) + ' ' + dateText(r.dayDates[d]);
+  const dd = wDayOf(sec, d), ph = wPhotosOf(sec, d), dis = can ? '' : 'disabled';
+  const tiles = ph.map((p) => `<div class="photo" data-id="${p.id}"><img alt="">${p.local ? '<span class="loc">di HP</span>' : ''}${can && (p.local || p.hasBase) ? `<button class="del ed" data-wa="${p.local ? 'edt' : 'edc'}" data-pid="${p.id}" aria-label="Edit foto">${ic('edit')}</button>` : ''}${can ? `<button class="del" data-wa="del" data-pid="${p.id}" aria-label="Hapus foto">${ic('trash')}</button>` : ''}</div>`).join('');
+  main.innerHTML = `<div class="card"><span class="chip">${SEC[sec]}</span> <span class="small mute" style="margin-left:6px">${esc(wdLabel(r, d))}</span>
+      ${can ? '' : '<p class="mute small" style="margin:10px 0 0">Bagian ini diisi oleh ' + (sec === 'engine' ? 'engineer' : 'officer deck') + '. Anda hanya bisa melihat.</p>'}
+      <label>Pekerjaan hari ini</label>
+      <textarea class="f" id="wtx" rows="6" ${dis} placeholder="Satu pekerjaan per baris, mis.&#10;Test running emergency generator&#10;Cleaning accommodation">${esc(dd.text)}</textarea>
+      <label style="display:flex;align-items:center;gap:10px;color:var(--ink);font-size:14px;font-weight:500"><input type="checkbox" id="wna" style="width:20px;height:20px" ${dd.na ? 'checked' : ''} ${dis}> Tidak ada pekerjaan / foto (NA)</label></div>
+    <div class="card"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px"><b>Foto</b><span class="small mute">${ph.length} foto · standar 4 (2×2), lebih dari itu menambah kolom</span></div>
+      ${ph.length ? `<div class="photos two">${tiles}</div>` : `<div class="empty">${ic('cam', 28)}Belum ada foto</div>`}
+      ${can ? (ph.length < W_MAX ? `<div class="two"><button class="btn sm" data-wa="cam">${ic('cam')} Kamera</button><button class="btn sm ghost" data-wa="gal">${ic('img')} Galeri</button></div>` : `<p class="mute small" style="margin:0;text-align:center">Maksimal ${W_MAX} foto per hari.</p>`) : ''}</div>
+    <div class="pager"><button class="ibtn" id="pv" ${d <= 0 ? 'disabled style="opacity:.35"' : ''} aria-label="Hari sebelumnya">${ic('back')}</button><div class="mid">${WD[d]} (${d + 1} / 7)</div><button class="ibtn" id="nx" ${d >= 6 ? 'disabled style="opacity:.35"' : ''} aria-label="Hari berikutnya">${ic('chev')}</button></div>`;
+  $$('.photo').forEach(loadWThumb);
+  $$('[data-wa]').forEach((b) => b.onclick = () => wAct(b, sec, d));
+  const same = () => { const c = wDayOf(sec, d); return c.text === $('#wtx').value && c.na === $('#wna').checked; };
+  const push = async () => { if (!can || same()) return; await outAdd({ type:'wday', periodId:wPid(), section:sec, day:d, text:$('#wtx').value, na:$('#wna').checked }); };
+  let tm; const tx = $('#wtx');
+  tx.oninput = () => { clearTimeout(tm); tm = setTimeout(push, 500); };
+  tx.onblur = () => { clearTimeout(tm); push(); };
+  $('#wna').onchange = async () => { await push(); wday(t); };
+  const move = async (x) => { clearTimeout(tm); await push(); stack[stack.length - 1] = { view:'wday', sec, day:d + x }; render(); window.scrollTo(0, 0); };
+  $('#pv').onclick = () => move(-1); $('#nx').onclick = () => move(1);
+}
+
+async function wAct(btn, sec, d) {
+  const what = btn.dataset.wa;
+  try {
+    if (what === 'cam' || what === 'gal') { pending = { w:true, section:sec, day:d }; $(what === 'cam' ? '#cam' : '#gal').click(); return; }
+    if (what === 'del') {
+      if (!(await ask({ title:'Hapus foto ini?', msg:'Foto akan dihapus dari laporan.', ok:'Hapus', danger:true }))) return;
+      const pid = btn.dataset.pid;
+      if (isLocal(pid)) await outDel(pid); else await outAdd({ type:'wdel', periodId:wPid(), photoId:pid, section:sec });
+    } else if (what === 'edt' || what === 'edc') {
+      let src, when, o, cp;
+      if (what === 'edt') {
+        o = OUT.find((x) => x.id === btn.dataset.pid);
+        if (!o || !o.base) return toast('Foto asli tidak tersimpan, hapus lalu ambil ulang.', 'err');
+        src = await busy('Membuka foto…', () => b64ToCanvas(o.base)); when = new Date(o.photoTime);
+      } else {
+        cp = S.w.photos.find((x) => x.id === btn.dataset.pid); if (!cp) return;
+        let b64; try { b64 = (await busy('Mengambil foto asli…', () => api('wPhotoBase', { id:cp.id }))).data; } catch (e) { return toast(/fetch|load failed|network/i.test(e.message) ? 'Butuh koneksi untuk mengedit foto yang sudah di cloud.' : e.message, 'err'); }
+        src = await b64ToCanvas(b64); when = new Date(cp.photoTime || Date.now());
+      }
+      const r = await stage(src, when, 'Edit foto');
+      if (!r) return;
+      const c = await toJpeg(stamped(scaleTo(r.canvas, CFG.MAX_SIDE), r.when)), base = await toJpeg(scaleTo(r.canvas, 800), .8);
+      if (o) { Object.assign(o, { b64:c.b64, base:base.b64, photoTime:r.when.toISOString() }); await outPut(o); }
+      else await outAdd({ type:'wphoto', periodId:wPid(), section:sec, day:d, b64:c.b64, base:base.b64, photoTime:r.when.toISOString(), replaceId:cp.id });
+      toast(o ? 'Foto diperbarui' : 'Perubahan tersimpan di HP. Upload untuk menggantikan foto di cloud.', 'ok');
+    }
+    render();
+  } catch (e) { toast(e.message, 'err'); }
+}
+
+/* signatures: remove the paper background, keep the ink, crop tight, navy on transparent */
+async function cleanSignature(file) {
+  const src = scaleTo(await loadCanvas(file), 900), W = src.width, H = src.height;
+  const px = src.getContext('2d').getImageData(0, 0, W, H).data, lum = new Float32Array(W * H);
+  for (let i = 0; i < W * H; i++) { const a = px[i * 4 + 3] / 255; lum[i] = (0.299 * px[i * 4] + 0.587 * px[i * 4 + 1] + 0.114 * px[i * 4 + 2]) * a + 255 * (1 - a); }
+  const sortedL = Float32Array.from(lum).sort(), inkRaw = sortedL[Math.floor((sortedL.length - 1) * 0.01)];
+  const BX = Math.max(3, Math.min(8, Math.floor(W / 40))), BY = Math.max(3, Math.min(8, Math.floor(H / 40))), grid = new Float32Array(BX * BY);
+  for (let by = 0; by < BY; by++) for (let bx = 0; bx < BX; bx++) {
+    const v = []; for (let y = Math.floor(by * H / BY); y < Math.floor((by + 1) * H / BY); y++) for (let x = Math.floor(bx * W / BX); x < Math.floor((bx + 1) * W / BX); x++) v.push(lum[y * W + x]);
+    v.sort((a, b) => a - b); grid[by * BX + bx] = v.length ? v[Math.floor((v.length - 1) * 0.85)] : 255;
+  }
+  const bgAt = (x, y) => {
+    const gx = Math.max(0, Math.min(BX - 1, (x + .5) / W * BX - .5)), gy = Math.max(0, Math.min(BY - 1, (y + .5) / H * BY - .5));
+    const x0 = Math.floor(gx), y0 = Math.floor(gy), x1 = Math.min(BX - 1, x0 + 1), y1 = Math.min(BY - 1, y0 + 1), fx = gx - x0, fy = gy - y0;
+    return (grid[y0 * BX + x0] * (1 - fx) + grid[y0 * BX + x1] * fx) * (1 - fy) + (grid[y1 * BX + x0] * (1 - fx) + grid[y1 * BX + x1] * fx) * fy;
+  };
+  const al = new Float32Array(W * H); let minX = W, minY = H, maxX = -1, maxY = -1;
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+    const bg = bgAt(x, y), ink = Math.min(inkRaw, bg - 70); let v = (bg - lum[y * W + x]) / (bg - ink);
+    v = Math.max(0, Math.min(1, v)); v = Math.pow(v, 0.75); if (v < 0.2) v = 0; al[y * W + x] = v;
+    if (v > 0.3) { if (x < minX) minX = x; if (x > maxX) maxX = x; if (y < minY) minY = y; if (y > maxY) maxY = y; }
+  }
+  if (maxX < 0) throw new Error('Tanda tangan tidak terdeteksi. Pakai foto di kertas putih dengan tinta gelap.');
+  const pad = Math.max(3, Math.round(0.04 * Math.max(maxX - minX, maxY - minY)));
+  minX = Math.max(0, minX - pad); minY = Math.max(0, minY - pad); maxX = Math.min(W - 1, maxX + pad); maxY = Math.min(H - 1, maxY + pad);
+  const ow = maxX - minX + 1, oh = maxY - minY + 1, out = mkCanvas(ow, oh), og = out.getContext('2d'), id = og.createImageData(ow, oh);
+  for (let y = 0; y < oh; y++) for (let x = 0; x < ow; x++) { const o = (y * ow + x) * 4; id.data[o] = 16; id.data[o + 1] = 24; id.data[o + 2] = 70; id.data[o + 3] = Math.round(255 * al[(minY + y) * W + minX + x]); }
+  og.putImageData(id, 0, 0);
+  const fin = scaleTo(out, 600), png = fin.toDataURL('image/png').split(',')[1];
+  return { canvas:fin, b64:png };
+}
+
+async function wcrew(t) {
+  $('#title').textContent = 'Daftar kru';
+  main.innerHTML = '<div class="card mute" style="text-align:center">Memuat…</div>';
+  try { await wRefresh(); } catch (e) { return toast(e.message, 'err'); }
+  const crew = S.w.crew.slice().sort((a, b) => a.shortName.localeCompare(b.shortName));
+  main.innerHTML = `<button class="btn" id="cadd" style="margin-bottom:12px">+ Tambah kru</button>` + crew.map((c) =>
+    `<div class="row-i" data-c="${esc(c.crewId)}"><span class="no" style="width:64px;min-width:64px;height:44px;padding:0;background:#fff;overflow:hidden">${c.hasSig ? `<img data-sig="${esc(c.crewId)}" alt="" style="max-width:100%;max-height:100%">` : ''}</span>
+      <span class="tx"><b>${esc(c.fullName || c.shortName)}</b><br><span class="small mute">${esc(c.shortName)} · ${esc(c.rank || '-')}${c.active ? '' : ' · tidak aktif'}</span></span>${c.hasSig ? '' : '<span class="chip">tanpa ttd</span>'}</div>`).join('');
+  $$('[data-sig]').forEach(async (im) => { try { im.src = 'data:image/png;base64,' + (await api('wCrewSig', { crewId:im.dataset.sig })).data; } catch {} });
+  $$('.row-i').forEach((x) => x.onclick = () => wCrewEdit(crew.find((c) => c.crewId === x.dataset.c)));
+  $('#cadd').onclick = () => wCrewEdit(null);
+}
+function wCrewEdit(c) {
+  let sig = null;
+  const m = sheet(`<h3>${c ? 'Ubah kru' : 'Tambah kru'}</h3>
+    <label style="margin-top:0">Nama singkat</label><input class="f" id="ks" value="${esc(c ? c.shortName : '')}" placeholder="mis. CO - Hafizh">
+    <label>Nama lengkap (tercetak di laporan)</label><input class="f" id="kf" value="${esc(c ? c.fullName : '')}" placeholder="mis. HAFIZH TRIWANTO PUTRA">
+    <label>Jabatan</label><input class="f" id="kr" value="${esc(c ? c.rank : '')}" placeholder="mis. Chief Officer">
+    <label>Tanda tangan</label><div id="kp" style="background:repeating-conic-gradient(#e8edf5 0 25%,#fff 0 50%) 0 0/16px 16px;border-radius:12px;min-height:70px;display:grid;place-items:center;padding:8px"><span class="small mute">${c && c.hasSig ? 'Tanda tangan tersimpan. Pilih foto baru untuk mengganti.' : 'Belum ada'}</span></div>
+    <p class="mute small" style="margin:6px 0 0">Foto tanda tangan di kertas putih. Latar dibuang otomatis.</p>
+    <div class="two" style="margin-top:8px"><button class="btn sm ghost" id="kcam">${ic('cam')} Kamera</button><button class="btn sm ghost" id="kgal">${ic('img')} Galeri</button></div>
+    <label style="display:flex;align-items:center;gap:10px;color:var(--ink);font-size:14px;font-weight:500"><input type="checkbox" id="ka" style="width:20px;height:20px" ${!c || c.active ? 'checked' : ''}> Aktif (muncul di daftar pilihan)</label>
+    <div class="two" style="margin-top:14px"><button class="btn ghost" id="n">Batal</button><button class="btn" id="y">Simpan</button></div>`);
+  if (c && c.hasSig) api('wCrewSig', { crewId:c.crewId }).then((d) => { if (!sig) $('#kp', m).innerHTML = `<img src="data:image/png;base64,${d.data}" alt="" style="max-height:80px;max-width:100%">`; }).catch(() => {});
+  const pick = (capture) => {
+    const f = document.createElement('input'); f.type = 'file'; f.accept = 'image/*'; if (capture) f.capture = 'environment';
+    f.onchange = async () => {
+      if (!f.files[0]) return;
+      try { const r = await busy('Membersihkan tanda tangan…', () => cleanSignature(f.files[0])); sig = r; r.canvas.style.cssText = 'max-height:90px;max-width:100%'; $('#kp', m).replaceChildren(r.canvas); }
+      catch (e) { toast(e.message, 'err'); }
+    };
+    f.click();
+  };
+  $('#kcam', m).onclick = () => pick(true); $('#kgal', m).onclick = () => pick(false);
+  $('#n', m).onclick = () => m.remove();
+  $('#y', m).onclick = async () => {
+    try {
+      await busy('Menyimpan…', () => api('wCrewSave', { crewId:c ? c.crewId : '', shortName:$('#ks', m).value, fullName:$('#kf', m).value, rank:$('#kr', m).value, active:$('#ka', m).checked, sig:sig ? sig.b64 : '' }));
+      m.remove(); wcrew();
+    } catch (e) { toast(e.message, 'err'); }
+  };
+}
+
+// master: a button to the weekly module at the top of the master screen
+{
+  const _master = master;
+  master = async function (t) {
+    await _master(t);
+    if (cur().view !== 'master') return;
+    main.insertAdjacentHTML('afterbegin', `<button class="mod" id="mwk" style="margin-bottom:14px"><span class="ico" style="background:linear-gradient(135deg,#f59e0b,#ef4444)">${ic('wrench', 28)}</span><div><b>Weekly Deck &amp; Engine Report</b><span class="s">Buat laporan, kru, ambil file</span></div><span class="go">${ic('chev')}</span></button>`);
+    $('#mwk').onclick = async () => { try { await busy('Memuat…', wRefresh); go('wk'); } catch (e) { toast(e.message, 'err'); } };
   };
 }
 
