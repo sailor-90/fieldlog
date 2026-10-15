@@ -479,7 +479,8 @@ function process(c, p) {
   return o;
 }
 /** Preview + edit sheet: rotate, flip, crop, then the date/time stamp. Resolves { when, canvas } (edited, still large) or null. */
-function stage(canvas, when, title = 'Pratinjau foto') {
+function stage(canvas, when, title = 'Pratinjau foto', opts = {}) {
+  const stampOn = opts.stamp !== false;
   return new Promise((resolve) => {
     const m = sheet(`<h3>${title}</h3>
       <div id="pvbox" style="position:relative;touch-action:none;user-select:none;-webkit-user-select:none"></div>
@@ -492,14 +493,14 @@ function stage(canvas, when, title = 'Pratinjau foto') {
       <div id="pn" class="hide"></div>
       <div id="crtools" class="hide"><div class="ratios"><button class="chipb" data-r="0">Bebas</button><button class="chipb" data-r="1.3333">4:3</button><button class="chipb" data-r="0.75">3:4</button><button class="chipb" data-r="1">1:1</button></div>
         <div class="two" style="margin-top:10px"><button class="btn ghost" id="crc">Batal potong</button><button class="btn" id="cra">${ic('check')} Terapkan</button></div></div>
-      <div id="dtw"><label>Tanggal & jam di foto</label><input class="f" type="datetime-local" id="pvt">
-        <button class="btn ghost sm" id="rst" style="margin-top:10px">Kembalikan ke foto asli</button></div>
+      <div id="dtw"><div class="${stampOn ? '' : 'hide'}"><label>Tanggal & jam di foto</label><input class="f" type="datetime-local" id="pvt"></div>
+        <button class="btn ghost sm" id="rst" style="margin-top:${stampOn ? 10 : 14}px">Kembalikan ke foto asli</button></div>
       <div class="two" id="fin" style="margin-top:14px"><button class="btn ghost" id="pvc">Batal</button><button class="btn" id="pvs">${ic('check')} Simpan foto</button></div>`);
     const box = $('#pvbox', m), inp = $('#pvt', m);
     let work = canvas, crop = null, prm = PRM0(); inp.value = toLocalInput(when);
     const bake = () => { if (prmDirty(prm)) { work = process(work, prm); prm = PRM0(); } };
     const show = (c, stamp) => { const v = document.createElement('canvas'); const p = process(scaleTo(c, 900), prm); const d = new Date(inp.value);
-      const out = stamp ? stamped(p, isNaN(d) ? when : d) : p; v.width = out.width; v.height = out.height; v.getContext('2d').drawImage(out, 0, 0);
+      const out = stamp && stampOn ? stamped(p, isNaN(d) ? when : d) : p; v.width = out.width; v.height = out.height; v.getContext('2d').drawImage(out, 0, 0);
       v.style.cssText = 'width:100%;border-radius:14px;display:block'; return v; };
     const draw = () => { const inner = document.createElement('div'); inner.className = 'pvin'; inner.appendChild(show(work, !crop)); box.replaceChildren(inner); if (crop) overlay(inner); };
     inp.oninput = () => { if (!crop) draw(); };
@@ -831,12 +832,17 @@ async function handleFile(f, fromCamera) {
   const when0 = fromCamera ? new Date() : new Date(f.lastModified || Date.now());   // gallery: file time (editable)
   try {
     const canvas = await busy('Membaca foto…', () => loadCanvas(f));
-    const r = await stage(canvas, when0);
+    const r = await stage(canvas, when0, 'Pratinjau foto', { stamp:!pw });
     if (!r) return;
+    if (pw) {
+      const wj = await wJpeg(r.canvas);
+      await outAdd({ type:'wphoto', periodId:wPid(), section:pw.section, day:pw.day, b64:wj.b64, photoTime:r.when.toISOString() });
+      if (!storageAsked && navigator.storage && navigator.storage.persist) { storageAsked = true; navigator.storage.persist().catch(() => {}); }
+      toast('Foto tersimpan di HP', 'ok'); render(); return;
+    }
     const c = await toJpeg(stamped(scaleTo(r.canvas, CFG.MAX_SIDE), r.when));
     const base = await toJpeg(scaleTo(r.canvas, 800), .8);          // unstamped copy: lets the date/time and edits be changed while the photo is still on the phone
-    if (pw) await outAdd({ type:'wphoto', periodId:wPid(), section:pw.section, day:pw.day, b64:c.b64, base:base.b64, photoTime:r.when.toISOString() });
-    else await outAdd({ type:'photo', item:itemNo, slot, b64:c.b64, base:base.b64, photoTime:r.when.toISOString() });
+    await outAdd({ type:'photo', item:itemNo, slot, b64:c.b64, base:base.b64, photoTime:r.when.toISOString() });
     if (!storageAsked && navigator.storage && navigator.storage.persist) { storageAsked = true; navigator.storage.persist().catch(() => {}); }
     toast('Foto tersimpan di HP', 'ok');
   } catch (e) { toast('Gagal: ' + e.message, 'err'); }
@@ -989,6 +995,8 @@ function masterFinish(p, last) {
 const WD = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 const SEC = { deck:'DECK', engine:'MACHINERY SPACES' };
 const W_MAX = 12;
+const W_SIDE = () => CFG.W_SIDE || 900, W_QUAL = () => CFG.W_QUALITY || 0.75;       // weekly photos: sharper than FSC, no date stamp
+const wJpeg = (canvas) => toJpeg(scaleTo(canvas, W_SIDE()), W_QUAL());
 async function wRefresh() {
   const d = await api('wState');
   S.w = { report:d.report, days:d.days || [], photos:d.photos || [], canEdit:d.canEdit, next:d.next, crew:d.crew || [], defaultSigners:d.defaultSigners || {} };
@@ -1123,7 +1131,7 @@ function wday(t) {
   const r = wRep(), sec = t.sec, d = t.day, can = S.w.canEdit[sec];
   $('#title').textContent = WD[d].slice(0, 3) + ' ' + dateText(r.dayDates[d]);
   const dd = wDayOf(sec, d), ph = wPhotosOf(sec, d), dis = can ? '' : 'disabled';
-  const tiles = ph.map((p) => `<div class="photo" data-id="${p.id}"><img alt="">${p.local ? '<span class="loc">di HP</span>' : ''}${can && (p.local || p.hasBase) ? `<button class="del ed" data-wa="${p.local ? 'edt' : 'edc'}" data-pid="${p.id}" aria-label="Edit foto">${ic('edit')}</button>` : ''}${can ? `<button class="del" data-wa="del" data-pid="${p.id}" aria-label="Hapus foto">${ic('trash')}</button>` : ''}</div>`).join('');
+  const tiles = ph.map((p) => `<div class="photo" data-id="${p.id}"><img alt="">${p.local ? '<span class="loc">di HP</span>' : ''}${can ? `<button class="del ed" data-wa="${p.local ? 'edt' : 'edc'}" data-pid="${p.id}" aria-label="Edit foto">${ic('edit')}</button>` : ''}${can ? `<button class="del" data-wa="del" data-pid="${p.id}" aria-label="Hapus foto">${ic('trash')}</button>` : ''}</div>`).join('');
   main.innerHTML = `<div class="card"><span class="chip">${SEC[sec]}</span> <span class="small mute" style="margin-left:6px">${esc(wdLabel(r, d))}</span>
       ${can ? '' : '<p class="mute small" style="margin:10px 0 0">Bagian ini diisi oleh ' + (sec === 'engine' ? 'engineer' : 'officer deck') + '. Anda hanya bisa melihat.</p>'}
       <label>Pekerjaan hari ini</label>
@@ -1157,18 +1165,18 @@ async function wAct(btn, sec, d) {
       let src, when, o, cp;
       if (what === 'edt') {
         o = OUT.find((x) => x.id === btn.dataset.pid);
-        if (!o || !o.base) return toast('Foto asli tidak tersimpan, hapus lalu ambil ulang.', 'err');
-        src = await busy('Membuka foto…', () => b64ToCanvas(o.base)); when = new Date(o.photoTime);
+        if (!o) return;
+        src = await busy('Membuka foto…', () => b64ToCanvas(o.b64)); when = new Date(o.photoTime);
       } else {
         cp = S.w.photos.find((x) => x.id === btn.dataset.pid); if (!cp) return;
-        let b64; try { b64 = (await busy('Mengambil foto asli…', () => api('wPhotoBase', { id:cp.id }))).data; } catch (e) { return toast(/fetch|load failed|network/i.test(e.message) ? 'Butuh koneksi untuk mengedit foto yang sudah di cloud.' : e.message, 'err'); }
+        let b64; try { b64 = (await busy('Mengambil foto…', () => api('wPhoto', { id:cp.id }))).data; } catch (e) { return toast(/fetch|load failed|network/i.test(e.message) ? 'Butuh koneksi untuk mengedit foto yang sudah di cloud.' : e.message, 'err'); }
         src = await b64ToCanvas(b64); when = new Date(cp.photoTime || Date.now());
       }
-      const r = await stage(src, when, 'Edit foto');
+      const r = await stage(src, when, 'Edit foto', { stamp:false });
       if (!r) return;
-      const c = await toJpeg(stamped(scaleTo(r.canvas, CFG.MAX_SIDE), r.when)), base = await toJpeg(scaleTo(r.canvas, 800), .8);
-      if (o) { Object.assign(o, { b64:c.b64, base:base.b64, photoTime:r.when.toISOString() }); await outPut(o); }
-      else await outAdd({ type:'wphoto', periodId:wPid(), section:sec, day:d, b64:c.b64, base:base.b64, photoTime:r.when.toISOString(), replaceId:cp.id });
+      const wj = await wJpeg(r.canvas);
+      if (o) { Object.assign(o, { b64:wj.b64 }); await outPut(o); }
+      else await outAdd({ type:'wphoto', periodId:wPid(), section:sec, day:d, b64:wj.b64, photoTime:cp.photoTime || new Date().toISOString(), replaceId:cp.id });
       toast(o ? 'Foto diperbarui' : 'Perubahan tersimpan di HP. Upload untuk menggantikan foto di cloud.', 'ok');
     }
     render();
