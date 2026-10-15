@@ -1066,19 +1066,22 @@ function wk(t) {
   };
 }
 
-function crewOptions(sel) {
-  const crew = (S.w.crew || []).filter((c) => c.active || c.crewId === sel);
-  return '<option value="">- pilih -</option>' + crew.map((c) => `<option value="${esc(c.crewId)}" ${c.crewId === sel ? 'selected' : ''}>${esc(c.fullName || c.shortName)}${c.hasSig ? '' : ' (tanpa ttd)'}</option>`).join('');
+const SIGN_RANK = { master:/master/i, co:/chief officer/i, ce:/chief engineer/i, e2:/2nd engineer/i };
+function crewOptions(sel, key) {
+  const crew = (S.w.crew || []).filter((c) => c.active || c.crewId === sel), re = SIGN_RANK[key];
+  const opt = (c) => `<option value="${esc(c.crewId)}" ${c.crewId === sel ? 'selected' : ''}>${esc(c.fullName || c.shortName)}${c.hasSig ? '' : ' (tanpa ttd)'}</option>`;
+  const fit = re ? crew.filter((c) => re.test(c.rank)) : crew, rest = re ? crew.filter((c) => !re.test(c.rank)) : [];
+  return '<option value="">- pilih -</option>' + fit.map(opt).join('') + (rest.length ? `<optgroup label="Jabatan lain">${rest.map(opt).join('')}</optgroup>` : '');
 }
 function wCreate() {
   const n = S.w.next, ds = S.w.defaultSigners;
   main.innerHTML = `<div class="hero"><p>Weekly Deck &amp; Engine Report</p><h2>Create new</h2><p style="margin-top:6px">Isi nomor, tanggal Sabtu, dan penandatangan.</p></div>
     <div class="card"><label style="margin-top:0">Nomor laporan</label><input class="f" id="wn" type="number" inputmode="numeric" value="${n.no}">
       <label>Tanggal laporan (hari Sabtu)</label><input class="f" id="wd" type="date" value="${esc(n.date)}">
-      <label>Master</label><select class="f" id="s-master">${crewOptions(ds.master)}</select>
-      <label>Chief Officer</label><select class="f" id="s-co">${crewOptions(ds.co)}</select>
-      <label>Chief Engineer</label><select class="f" id="s-ce">${crewOptions(ds.ce)}</select>
-      <label>2nd Engineer</label><select class="f" id="s-e2">${crewOptions(ds.e2)}</select>
+      <label>Master</label><select class="f" id="s-master">${crewOptions(ds.master, 'master')}</select>
+      <label>Chief Officer</label><select class="f" id="s-co">${crewOptions(ds.co, 'co')}</select>
+      <label>Chief Engineer</label><select class="f" id="s-ce">${crewOptions(ds.ce, 'ce')}</select>
+      <label>2nd Engineer</label><select class="f" id="s-e2">${crewOptions(ds.e2, 'e2')}</select>
       <button class="btn" id="wc" style="margin-top:16px">Create new</button></div>
     <button class="btn ghost" id="wcr2" style="margin-top:10px">Daftar kru &amp; tanda tangan</button>`;
   $('#wcr2').onclick = () => go('wcrew');
@@ -1094,7 +1097,7 @@ function wCreate() {
 }
 function wSigners() {
   const sg = wRep().signers, m = sheet(`<h3>Tanda tangan di laporan</h3><p>Nama dan tanda tangan orangnya tercetak otomatis di kotak atas laporan.</p>
-    ${[['master', 'Master'], ['co', 'Chief Officer'], ['ce', 'Chief Engineer'], ['e2', '2nd Engineer']].map(([k, l]) => `<label>${l}</label><select class="f" id="g-${k}">${crewOptions(sg[k] ? sg[k].crewId : '')}</select>`).join('')}
+    ${[['master', 'Master'], ['co', 'Chief Officer'], ['ce', 'Chief Engineer'], ['e2', '2nd Engineer']].map(([k, l]) => `<label>${l}</label><select class="f" id="g-${k}">${crewOptions(sg[k] ? sg[k].crewId : '', k)}</select>`).join('')}
     <div class="two" style="margin-top:14px"><button class="btn ghost" id="n">Batal</button><button class="btn" id="y">Simpan</button></div>`);
   $('#n', m).onclick = () => m.remove();
   $('#y', m).onclick = async () => {
