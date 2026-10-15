@@ -108,6 +108,16 @@
   .photos { display:grid; gap:10px; margin-bottom:10px; } .photos.two { grid-template-columns:1fr 1fr; } .photos .photo { margin-bottom:0; }
   .photo { position:relative; border-radius:16px; overflow:hidden; background:var(--soft); aspect-ratio:4/3; margin-bottom:10px; }
   .photo img { width:100%; height:100%; object-fit:cover; display:block; }
+  .tools { display:grid; grid-template-columns:repeat(4,1fr); gap:8px; margin-top:12px; }
+  .tb { display:flex; flex-direction:column; align-items:center; gap:4px; padding:10px 2px; border-radius:14px; border:1px solid var(--line); background:var(--soft); color:var(--ink); font:inherit; font-size:10.5px; font-weight:600; line-height:1.15; text-align:center; cursor:pointer; }
+  .tb .i { font-size:22px; color:var(--brand); } .tb:active { transform:scale(.96); }
+  .sl { margin-top:12px; } .sl label { display:flex; justify-content:space-between; margin:0 0 6px; } .sl input[type=range] { width:100%; accent-color:var(--brand); height:28px; }
+  .ratios { display:flex; gap:8px; margin-top:12px; flex-wrap:wrap; } .chipb { padding:8px 14px; border-radius:99px; border:1px solid var(--line); background:var(--soft); color:var(--ink); font:inherit; font-size:13px; font-weight:600; cursor:pointer; } .chipb.on { background:var(--brand); color:#fff; border-color:var(--brand); }
+  .cropbox { position:absolute; border:2px solid #fff; box-shadow:0 0 0 9999px rgba(0,0,0,.55); cursor:move; touch-action:none; }
+  .cropbox .hd { position:absolute; width:30px; height:30px; background:#fff; border:3px solid var(--brand); border-radius:50%; touch-action:none; }
+  .cropbox .hd[data-h=nw] { left:-15px; top:-15px; } .cropbox .hd[data-h=ne] { right:-15px; top:-15px; } .cropbox .hd[data-h=sw] { left:-15px; bottom:-15px; } .cropbox .hd[data-h=se] { right:-15px; bottom:-15px; }
+  #pvbox { overflow:hidden; border-radius:14px; padding:16px; background:var(--soft); } .pvin { position:relative; }
+  .photo .del.ed { right:56px; }
   .photo .loc { position:absolute; left:10px; bottom:10px; padding:3px 9px; border-radius:99px; background:rgba(245,158,11,.92); color:#1b1200; font-size:11px; font-weight:700; }
   .photo .del { position:absolute; top:10px; right:10px; width:38px; height:38px; border-radius:12px; border:0; background:rgba(0,0,0,.55); color:#fff; display:grid; place-items:center; font-size:18px; cursor:pointer; }
   .empty { border:2px dashed var(--line); border-radius:16px; aspect-ratio:16/7; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:6px; color:var(--mute); font-size:13px; margin-bottom:10px; }
@@ -145,7 +155,7 @@
 <input type="file" id="cam" accept="image/*" capture="environment" class="hide">
 <input type="file" id="gal" accept="image/*" class="hide">
 
-<script src="config.js?v=20261014c"></script>
+<script src="config.js?v=20261015a"></script>
 <script>
 const CFG = window.APP_CONFIG;
 const $ = (s, r = document) => r.querySelector(s);
@@ -206,7 +216,7 @@ async function outAdd(o) {
 async function outLoad() { try { OUT = (await idb.ops()) || []; } catch { OUT = []; } }
 const pendingCount = () => ({ photos:OUT.filter((o) => o.type === 'photo').length, other:OUT.filter((o) => o.type !== 'photo').length, all:OUT.length });
 const isLocal = (id) => String(id)[0] === 'L';
-const delIds = () => new Set(OUT.filter((o) => o.type === 'delPhoto').map((o) => o.photoId));
+const delIds = () => new Set(OUT.filter((o) => o.type === 'delPhoto' || (o.type === 'photo' && o.replaceId)).map((o) => o.photoId || o.replaceId));
 function applyOut() {                                      // lay the pending answers/captions over what the cloud returned
   for (const o of OUT) {
     if (o.periodId && S.period && o.periodId !== S.period.periodId) continue;
@@ -219,7 +229,7 @@ let syncing = false;
 async function sendOp(o) {
   if (S.period && o.periodId && o.periodId !== S.period.periodId) throw new Error('Isian ini milik periode lain');
   if (o.type === 'photo') {
-    const d = await api('upload', { item:o.item, slot:o.slot, data:o.b64, photoTime:o.photoTime, officer:o.officer });
+    const d = await api('upload', { item:o.item, slot:o.slot, data:o.b64, base:o.base, replaceId:o.replaceId, photoTime:o.photoTime, officer:o.officer });
     thumbCache[d.id] = 'data:image/jpeg;base64,' + o.b64;
   } else if (o.type === 'delPhoto') await api('deletePhoto', { id:o.photoId, officer:o.officer });
   else if (o.type === 'answer') await api('setAnswer', { item:o.item, answer:o.answer, remarks:o.remarks, officer:o.officer });
@@ -306,11 +316,12 @@ function render() {
 }
 
 /* ---------- photo pipeline: keep resolution (capped), stamp date/time inside the photo, cut JPEG quality ---------- */
+const WORK_SIDE = 1600;                                      // editing happens on a bigger copy; the saved photo is cut down to MAX_SIDE at the end
 function loadCanvas(file) {
   return new Promise((resolve, reject) => {
     const img = new Image(), url = URL.createObjectURL(file);
     img.onload = () => {
-      const k = Math.min(1, CFG.MAX_SIDE / Math.max(img.width, img.height));
+      const k = Math.min(1, WORK_SIDE / Math.max(img.width, img.height));
       const c = document.createElement('canvas'); c.width = Math.round(img.width * k); c.height = Math.round(img.height * k);
       const g = c.getContext('2d'); g.imageSmoothingEnabled = true; g.imageSmoothingQuality = 'high';
       g.drawImage(img, 0, 0, c.width, c.height);
@@ -332,22 +343,177 @@ function stamped(src, when) {
   g.fillText(text, c.width - pad, c.height - pad * 1.1);
   return c;
 }
-const toJpeg = (c) => new Promise((resolve, reject) => c.toBlob((b) => {
+const toJpeg = (c, q = CFG.JPEG_QUALITY) => new Promise((resolve, reject) => c.toBlob((b) => {
   if (!b) return reject(new Error('Gagal memproses foto'));
   const r = new FileReader(); r.onload = () => resolve({ b64: r.result.split(',')[1] }); r.readAsDataURL(b);
-}, 'image/jpeg', CFG.JPEG_QUALITY));
-function stage(canvas, when) {
+}, 'image/jpeg', q));
+const b64ToCanvas = (b64) => new Promise((ok, no) => { const img = new Image(); img.onload = () => { const c = mkCanvas(img.width, img.height); c.getContext('2d').drawImage(img, 0, 0); ok(c); }; img.onerror = () => no(new Error('Foto asli tidak terbaca')); img.src = 'data:image/jpeg;base64,' + b64; });
+const mkCanvas = (w, h) => { const c = document.createElement('canvas'); c.width = w; c.height = h; return c; };
+function scaleTo(c, max) {
+  const k = Math.min(1, max / Math.max(c.width, c.height)); if (k === 1) return c;
+  const o = mkCanvas(Math.round(c.width * k), Math.round(c.height * k)), g = o.getContext('2d');
+  g.imageSmoothingEnabled = true; g.imageSmoothingQuality = 'high'; g.drawImage(c, 0, 0, o.width, o.height); return o;
+}
+function rotated(c, dir) {                                   // dir: 1 = clockwise, -1 = counter-clockwise
+  const o = mkCanvas(c.height, c.width), g = o.getContext('2d');
+  g.translate(o.width / 2, o.height / 2); g.rotate(dir * Math.PI / 2); g.drawImage(c, -c.width / 2, -c.height / 2); return o;
+}
+function flipped(c, horizontal) {
+  const o = mkCanvas(c.width, c.height), g = o.getContext('2d');
+  if (horizontal) { g.translate(c.width, 0); g.scale(-1, 1); } else { g.translate(0, c.height); g.scale(1, -1); }
+  g.drawImage(c, 0, 0); return o;
+}
+function cropped(c, r) {                                     // r = { x, y, w, h } as fractions of the image
+  const sx = Math.round(r.x * c.width), sy = Math.round(r.y * c.height), sw = Math.max(8, Math.round(r.w * c.width)), sh = Math.max(8, Math.round(r.h * c.height));
+  const o = mkCanvas(sw, sh); o.getContext('2d').drawImage(c, sx, sy, sw, sh, 0, 0, sw, sh); return o;
+}
+function straighten(c, deg) {                                 // rotate by a small angle and zoom just enough that no empty corners show
+  const a = Math.abs(deg) * Math.PI / 180, W = c.width, H = c.height, s = Math.cos(a) + Math.sin(a) * Math.max(W / H, H / W);
+  const o = mkCanvas(W, H), g = o.getContext('2d'); g.imageSmoothingEnabled = true; g.imageSmoothingQuality = 'high';
+  g.translate(W / 2, H / 2); g.rotate(deg * Math.PI / 180); g.scale(s, s); g.drawImage(c, -W / 2, -H / 2); return o;
+}
+function keystone(c, k, vertical) {                            // perspective: k > 0 widens the first edge (top / left), k < 0 the last one; the other edge stays as is
+  const W = c.width, H = c.height, o = mkCanvas(W, H), g = o.getContext('2d'), n = vertical ? H : W;
+  g.imageSmoothingEnabled = true; g.imageSmoothingQuality = 'high';
+  for (let i = 0; i < n; i++) {
+    const t = i / n, s = 1 + (k > 0 ? k * (1 - t) : -k * t);
+    if (vertical) { const w = W * s; g.drawImage(c, 0, i, W, 1, (W - w) / 2, i, w, 1); }
+    else { const hh = H * s; g.drawImage(c, i, 0, 1, H, i, (H - hh) / 2, 1, hh); }
+  }
+  return o;
+}
+function tone(c, p) {                                          // brightness / contrast / saturation, each -100..100
+  const o = mkCanvas(c.width, c.height), g = o.getContext('2d'); g.drawImage(c, 0, 0);
+  const d = g.getImageData(0, 0, o.width, o.height), a = d.data;
+  let b = p.br * 2.55, ct = (100 + p.ct) / 100, sa = (100 + p.sa) / 100, m = [1, 1, 1];
+  const f = p.flt;                                             // filter presets sit on top of the three sliders
+  if (f === 'bw') { sa = 0; ct *= 1.08; } else if (f === 'vivid') { sa *= 1.35; ct *= 1.12; } else if (f === 'fade') { ct *= .85; sa *= .85; b += 14; }
+  else if (f === 'warm') m = [1.08, 1, .88]; else if (f === 'cool') m = [.9, 1, 1.1];
+  const cl = (v) => v < 0 ? 0 : v > 255 ? 255 : v;
+  for (let i = 0; i < a.length; i += 4) {
+    const l = .299 * a[i] + .587 * a[i + 1] + .114 * a[i + 2];
+    for (let k = 0; k < 3; k++) { const v = (l + (a[i + k] - l) * sa) * m[k]; a[i + k] = cl((v - 128) * ct + 128 + b); }
+  }
+  g.putImageData(d, 0, 0); return o;
+}
+const PRM0 = () => ({ angle:0, vk:0, hk:0, br:0, ct:0, sa:0, flt:'' });
+const prmDirty = (p) => Object.values(p).some((v) => v);
+function process(c, p) {
+  let o = c;
+  if (p.angle) o = straighten(o, p.angle);
+  if (p.vk) o = keystone(o, p.vk / 100, true);
+  if (p.hk) o = keystone(o, p.hk / 100, false);
+  if (p.br || p.ct || p.sa || p.flt) o = tone(o, p);
+  return o;
+}
+/** Preview + edit sheet: rotate, flip, crop, then the date/time stamp. Resolves { when, canvas } (edited, still large) or null. */
+function stage(canvas, when, title = 'Pratinjau foto') {
   return new Promise((resolve) => {
-    const m = sheet(`<h3>Pratinjau foto</h3><p>Tanggal dan jam akan tercetak di pojok kanan bawah foto.</p><div id="pv"></div>
-      <label>Tanggal & jam di foto</label><input class="f" type="datetime-local" id="pvt">
-      <div class="two" style="margin-top:14px"><button class="btn ghost" id="pvc">Batal</button><button class="btn" id="pvs">${ic('check')} Simpan foto</button></div>`);
-    const pv = $('#pv', m), inp = $('#pvt', m); inp.value = toLocalInput(when);
-    const draw = () => { const d = new Date(inp.value); const c = stamped(canvas, isNaN(d) ? when : d); c.style.cssText = 'width:100%;border-radius:14px;display:block'; pv.replaceChildren(c); };
-    inp.oninput = draw; draw();
+    const m = sheet(`<h3>${title}</h3>
+      <div id="pvbox" style="position:relative;touch-action:none;user-select:none;-webkit-user-select:none"></div>
+      <div id="tools" class="tools">
+        <button class="tb" data-t="rl">${tbi('rl')}<span>Putar kiri</span></button><button class="tb" data-t="rr">${tbi('rr')}<span>Putar kanan</span></button>
+        <button class="tb" data-t="fh">${tbi('fh')}<span>Balik kiri-kanan</span></button><button class="tb" data-t="fv">${tbi('fv')}<span>Balik atas-bawah</span></button>
+        <button class="tb" data-t="cr">${tbi('cr')}<span>Potong</span></button>
+        <button class="tb" data-t="st">${tbi('st')}<span>Luruskan</span></button><button class="tb" data-t="ad">${tbi('ad')}<span>Sesuaikan</span></button><button class="tb" data-t="fl">${tbi('fl')}<span>Filter</span></button>
+      </div>
+      <div id="pn" class="hide"></div>
+      <div id="crtools" class="hide"><div class="ratios"><button class="chipb" data-r="0">Bebas</button><button class="chipb" data-r="1.3333">4:3</button><button class="chipb" data-r="0.75">3:4</button><button class="chipb" data-r="1">1:1</button></div>
+        <div class="two" style="margin-top:10px"><button class="btn ghost" id="crc">Batal potong</button><button class="btn" id="cra">${ic('check')} Terapkan</button></div></div>
+      <div id="dtw"><label>Tanggal & jam di foto</label><input class="f" type="datetime-local" id="pvt">
+        <button class="btn ghost sm" id="rst" style="margin-top:10px">Kembalikan ke foto asli</button></div>
+      <div class="two" id="fin" style="margin-top:14px"><button class="btn ghost" id="pvc">Batal</button><button class="btn" id="pvs">${ic('check')} Simpan foto</button></div>`);
+    const box = $('#pvbox', m), inp = $('#pvt', m);
+    let work = canvas, crop = null, prm = PRM0(); inp.value = toLocalInput(when);
+    const bake = () => { if (prmDirty(prm)) { work = process(work, prm); prm = PRM0(); } };
+    const show = (c, stamp) => { const v = document.createElement('canvas'); const p = process(scaleTo(c, 900), prm); const d = new Date(inp.value);
+      const out = stamp ? stamped(p, isNaN(d) ? when : d) : p; v.width = out.width; v.height = out.height; v.getContext('2d').drawImage(out, 0, 0);
+      v.style.cssText = 'width:100%;border-radius:14px;display:block'; return v; };
+    const draw = () => { const inner = document.createElement('div'); inner.className = 'pvin'; inner.appendChild(show(work, !crop)); box.replaceChildren(inner); if (crop) overlay(inner); };
+    inp.oninput = () => { if (!crop) draw(); };
+    const setCrop = (on) => { if (on) bake(); crop = on ? { x:.08, y:.08, w:.84, h:.84, ratio:0 } : null;
+      $('#tools', m).classList.toggle('hide', on); $('#crtools', m).classList.toggle('hide', !on); $('#dtw', m).classList.toggle('hide', on); $('#fin', m).classList.toggle('hide', on); draw(); };
+    function overlay(inner) {
+      const el = document.createElement('div'); el.className = 'cropbox';
+      el.innerHTML = '<i class="hd" data-h="nw"></i><i class="hd" data-h="ne"></i><i class="hd" data-h="sw"></i><i class="hd" data-h="se"></i>';
+      inner.appendChild(el);
+      const place = () => { el.style.left = crop.x * 100 + '%'; el.style.top = crop.y * 100 + '%'; el.style.width = crop.w * 100 + '%'; el.style.height = crop.h * 100 + '%'; };
+      place();
+      let drag = null;
+      const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
+      el.onpointerdown = (e) => { const r = inner.getBoundingClientRect(); drag = { h:e.target.dataset.h || 'mv', sx:e.clientX, sy:e.clientY, o:{ ...crop }, W:r.width, H:r.height }; el.setPointerCapture(e.pointerId); e.preventDefault(); };
+      el.onpointermove = (e) => {
+        if (!drag) return;
+        const dx = (e.clientX - drag.sx) / drag.W, dy = (e.clientY - drag.sy) / drag.H, o = drag.o, MIN = .08;
+        if (drag.h === 'mv') { crop.x = clamp(o.x + dx, 0, 1 - o.w); crop.y = clamp(o.y + dy, 0, 1 - o.h); }
+        else {
+          let x1 = o.x, y1 = o.y, x2 = o.x + o.w, y2 = o.y + o.h;
+          if (drag.h.includes('w')) x1 = clamp(o.x + dx, 0, x2 - MIN); if (drag.h.includes('e')) x2 = clamp(o.x + o.w + dx, x1 + MIN, 1);
+          if (drag.h.includes('n')) y1 = clamp(o.y + dy, 0, y2 - MIN); if (drag.h.includes('s')) y2 = clamp(o.y + o.h + dy, y1 + MIN, 1);
+          if (crop.ratio) {                                    // keep the chosen ratio (in pixels): follow the wider drag
+            const ar = work.width / work.height, want = crop.ratio / ar;   // w/h in fractions
+            let w = x2 - x1, hh = y2 - y1;
+            if (w / hh > want) w = hh * want; else hh = w / want;
+            if (drag.h.includes('w')) x1 = x2 - w; else x2 = x1 + w;
+            if (drag.h.includes('n')) y1 = y2 - hh; else y2 = y1 + hh;
+            if (x1 < 0 || y1 < 0 || x2 > 1 || y2 > 1) return;
+          }
+          Object.assign(crop, { x:x1, y:y1, w:x2 - x1, h:y2 - y1 });
+        }
+        place();
+      };
+      el.onpointerup = el.onpointercancel = () => { drag = null; };
+    }
+    $$('[data-r]', m).forEach((b) => b.onclick = () => {
+      const r = +b.dataset.r; crop.ratio = r; $$('[data-r]', m).forEach((x) => x.classList.toggle('on', x === b));
+      if (!r) return;
+      const ar = work.width / work.height; let w = .84, hh = w * ar / r; if (hh > .84) { hh = .84; w = hh * r / ar; }
+      Object.assign(crop, { w, h:hh, x:(1 - w) / 2, y:(1 - hh) / 2 }); draw();
+    });
+    $$('[data-t]', m).forEach((b) => b.onclick = () => {
+      const t = b.dataset.t;
+      if (t === 'cr') return setCrop(true);
+      if (t === 'st' || t === 'ad' || t === 'fl') return panel(t);
+      bake();
+      if (t === 'rl') work = rotated(work, -1); else if (t === 'rr') work = rotated(work, 1);
+      else if (t === 'fh') work = flipped(work, true); else if (t === 'fv') work = flipped(work, false);
+      draw();
+    });
+    $('#crc', m).onclick = () => setCrop(false);
+    $('#cra', m).onclick = () => { work = cropped(work, crop); setCrop(false); };
+    const FLT = [['', 'Asli'], ['bw', 'Hitam-putih'], ['warm', 'Hangat'], ['cool', 'Dingin'], ['vivid', 'Cerah'], ['fade', 'Pudar']];
+    const SL = { st:[['angle', 'Miring', -30, 30, .5, '°'], ['vk', 'Perspektif atas-bawah', -50, 50, 1, ''], ['hk', 'Perspektif kiri-kanan', -50, 50, 1, '']],
+                 ad:[['br', 'Kecerahan', -100, 100, 1, ''], ['ct', 'Kontras', -100, 100, 1, ''], ['sa', 'Warna', -100, 100, 1, '']] };
+    function panel(t) {
+      const pn = $('#pn', m); $('#tools', m).classList.add('hide'); pn.classList.remove('hide');
+      if (t === 'fl') {
+        pn.innerHTML = '<div class="ratios">' + FLT.map(([k, l]) => `<button class="chipb ${prm.flt === k ? 'on' : ''}" data-f="${k}">${l}</button>`).join('') + `</div><button class="btn" id="pnd" style="margin-top:12px">${ic('check')} Selesai</button>`;
+        $$('[data-f]', pn).forEach((b) => b.onclick = () => { prm.flt = b.dataset.f; $$('[data-f]', pn).forEach((x) => x.classList.toggle('on', x === b)); draw(); });
+        $('#pnd', pn).onclick = () => { pn.classList.add('hide'); $('#tools', m).classList.remove('hide'); };
+        return;
+      }
+      pn.innerHTML = SL[t].map(([k, l, lo, hi, st, u]) => `<div class="sl"><label>${l} <b id="v-${k}">${prm[k]}${u}</b></label><input type="range" min="${lo}" max="${hi}" step="${st}" value="${prm[k]}" data-k="${k}" data-u="${u}"></div>`).join('') +
+        `<div class="two" style="margin-top:12px"><button class="btn ghost" id="pnr">Atur ulang</button><button class="btn" id="pnd">${ic('check')} Selesai</button></div>`;
+      let raf = 0;
+      $$('[data-k]', pn).forEach((r) => r.oninput = () => { prm[r.dataset.k] = +r.value; $('#v-' + r.dataset.k, pn).textContent = r.value + r.dataset.u; cancelAnimationFrame(raf); raf = requestAnimationFrame(draw); });
+      $('#pnr', pn).onclick = () => { SL[t].forEach(([k]) => { prm[k] = 0; }); panel(t); draw(); };
+      $('#pnd', pn).onclick = () => { pn.classList.add('hide'); $('#tools', m).classList.remove('hide'); };
+    }
+    $('#rst', m).onclick = () => { work = canvas; prm = PRM0(); $('#pn', m).classList.add('hide'); $('#tools', m).classList.remove('hide'); draw(); };
     $('#pvc', m).onclick = () => { m.remove(); resolve(null); };
-    $('#pvs', m).onclick = () => { const d = new Date(inp.value); m.remove(); resolve({ when: isNaN(d) ? when : d, canvas }); };
+    $('#pvs', m).onclick = () => { const d = new Date(inp.value); m.remove(); resolve({ when: isNaN(d) ? when : d, canvas: process(work, prm) }); };
+    draw();
   });
 }
+const TBI = {
+  rl:'<path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4v5h5"/>', rr:'<path d="M21 12a9 9 0 1 1-3-6.7"/><path d="M21 4v5h-5"/>',
+  fh:'<path d="M12 3v18"/><path d="M8 7L3 17h5z"/><path d="M16 7l5 10h-5z"/>', fv:'<path d="M3 12h18"/><path d="M7 8L17 3v5z" transform="translate(0 0)"/><path d="M7 16l10 5v-5z"/>',
+  cr:'<path d="M6 2v14a2 2 0 0 0 2 2h14"/><path d="M18 22V8a2 2 0 0 0-2-2H2"/>',
+  st:'<path d="M3 15l18-6"/><path d="M12 12v-1"/><circle cx="12" cy="12" r="1"/><path d="M5 20h14"/>',
+  fl:'<circle cx="9" cy="10" r="6"/><circle cx="15" cy="10" r="6"/><circle cx="12" cy="15" r="6"/>',
+  ad:'<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2M5 5l1.5 1.5M17.5 17.5L19 19M5 19l1.5-1.5M17.5 6.5L19 5"/>'
+};
+const tbi = (k) => `<svg class="i" viewBox="0 0 24 24">${TBI[k]}</svg>`;
 
 /* ---------- data helpers ---------- */
 async function refresh() {
@@ -504,7 +670,7 @@ function item(t) {
   const blocked = !!(a.answer && a.officer !== S.officer);          // answered by another officer
   const slots = def.slots.map((sl, k) => {
     const ps = photosOf(def.item, k), cap = S.captions[`${def.item}:${k}`];
-    const photos = ps.length ? `<div class="photos ${ps.length > 1 ? 'two' : ''}">${ps.map((p) => `<div class="photo" data-id="${p.id}"><img alt="">${p.local ? '<span class="loc">di HP</span>' : ''}<button class="del" data-act="del" data-pid="${p.id}" aria-label="Hapus foto">${ic('trash')}</button></div>`).join('')}</div>` : `<div class="empty">${ic('cam', 28)}Belum ada foto</div>`;
+    const photos = ps.length ? `<div class="photos ${ps.length > 1 ? 'two' : ''}">${ps.map((p) => `<div class="photo" data-id="${p.id}"><img alt="">${p.local ? '<span class="loc">di HP</span>' : ''}${p.local ? `<button class="del ed" data-act="edt" data-pid="${p.id}" aria-label="Edit foto">${ic('edit')}</button>` : p.hasBase ? `<button class="del ed" data-act="edc" data-pid="${p.id}" aria-label="Edit foto">${ic('edit')}</button>` : ''}<button class="del" data-act="del" data-pid="${p.id}" aria-label="Hapus foto">${ic('trash')}</button></div>`).join('')}</div>` : `<div class="empty">${ic('cam', 28)}Belum ada foto</div>`;
     const add = ps.length < 2 ? `<div class="two"><button class="btn sm" data-act="cam">${ic('cam')} ${ps.length ? 'Foto ke-2' : 'Kamera'}</button><button class="btn sm ghost" data-act="gal">${ic('img')} Galeri</button></div>` : '<p class="mute small" style="margin:0;text-align:center">Maksimal 2 foto per slot. Hapus salah satu untuk mengganti.</p>';
     return `<div class="slot" data-s="${k}"><div class="slot-h"><span class="pill">${esc(sl.id)}</span><div class="cap"><b>${esc(cap || sl.label)}</b>${!cap && sl.labelId ? ` <span class="id">(${esc(sl.labelId)})</span>` : ''}</div>
       <button class="ibtn" data-act="cap" style="width:36px;height:36px;font-size:17px" aria-label="Edit keterangan">${ic('edit')}</button></div>${photos}${add}</div>`;
@@ -550,6 +716,25 @@ async function act(btn, def) {
       const text = v.trim() === base ? '' : v.trim();
       await outAdd({ type:'caption', item:def.item, slot, text });
       if (text) S.captions[key] = text; else delete S.captions[key];
+    } else if (what === 'edc') {
+      const cp = S.photos.find((x) => x.id === btn.dataset.pid); if (!cp) return;
+      let b64; try { b64 = (await busy('Mengambil foto asli…', () => api('photoBase', { id:cp.id }))).data; } catch (e) { return toast(/fetch|load failed|network/i.test(e.message) ? 'Butuh koneksi untuk mengedit foto yang sudah di cloud.' : e.message, 'err'); }
+      const r = await stage(await b64ToCanvas(b64), new Date(cp.photoTime || Date.now()), 'Edit foto');
+      if (!r) return;
+      const c = await toJpeg(stamped(scaleTo(r.canvas, CFG.MAX_SIDE), r.when));
+      const base = await toJpeg(scaleTo(r.canvas, 800), .8);
+      await outAdd({ type:'photo', item:def.item, slot, b64:c.b64, base:base.b64, photoTime:r.when.toISOString(), replaceId:cp.id });
+      toast('Perubahan tersimpan di HP. Upload untuk menggantikan foto di cloud.', 'ok');
+    } else if (what === 'edt') {
+      const o = OUT.find((x) => x.id === btn.dataset.pid);
+      if (!o || !o.base) return toast('Foto asli tidak tersimpan, hapus lalu ambil ulang.', 'err');
+      const src = await busy('Membuka foto…', () => b64ToCanvas(o.base));
+      const r = await stage(src, new Date(o.photoTime), 'Edit foto');
+      if (!r) return;
+      const c = await toJpeg(stamped(scaleTo(r.canvas, CFG.MAX_SIDE), r.when));
+      const base = await toJpeg(scaleTo(r.canvas, 800), .8);
+      Object.assign(o, { b64:c.b64, base:base.b64, photoTime:r.when.toISOString() }); await outPut(o);
+      toast('Foto diperbarui', 'ok');
     } else if (what === 'del') {
       if (!(await ask({ title:'Hapus foto ini?', msg:'Foto akan dihapus dari laporan.', ok:'Hapus', danger:true }))) return;
       const pid = btn.dataset.pid;
@@ -567,8 +752,9 @@ async function handleFile(f, fromCamera) {
     const canvas = await busy('Membaca foto…', () => loadCanvas(f));
     const r = await stage(canvas, when0);
     if (!r) return;
-    const c = await toJpeg(stamped(r.canvas, r.when));
-    await outAdd({ type:'photo', item:itemNo, slot, b64:c.b64, photoTime:r.when.toISOString() });
+    const c = await toJpeg(stamped(scaleTo(r.canvas, CFG.MAX_SIDE), r.when));
+    const base = await toJpeg(scaleTo(r.canvas, 800), .8);          // unstamped copy: lets the date/time and edits be changed while the photo is still on the phone
+    await outAdd({ type:'photo', item:itemNo, slot, b64:c.b64, base:base.b64, photoTime:r.when.toISOString() });
     if (!storageAsked && navigator.storage && navigator.storage.persist) { storageAsked = true; navigator.storage.persist().catch(() => {}); }
     toast('Foto tersimpan di HP', 'ok');
   } catch (e) { toast('Gagal: ' + e.message, 'err'); }
