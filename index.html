@@ -292,14 +292,14 @@ async function sendOp(o) {
       const d = await api('wUpload', { section:o.section, day:o.day, data:o.b64, base:o.base, replaceId:o.replaceId, photoTime:o.photoTime, officer:o.officer });
       thumbCache[d.id] = 'data:image/jpeg;base64,' + o.b64;
     } else if (o.type === 'wday') await api('wSetDay', { section:o.section, day:o.day, text:o.text, na:o.na, officer:o.officer });
-    else await api('wDeletePhoto', { id:o.photoId, officer:o.officer });
+    else { try { await api('wDeletePhoto', { id:o.photoId, officer:o.officer }); } catch (e) { if (!/not found/i.test(e.message)) throw e; } }   // already gone: fine
     return;
   }
   if (S.period && o.periodId && o.periodId !== S.period.periodId) throw new Error('Isian ini milik periode lain');
   if (o.type === 'photo') {
     const d = await api('upload', { item:o.item, slot:o.slot, data:o.b64, base:o.base, replaceId:o.replaceId, photoTime:o.photoTime, officer:o.officer });
     thumbCache[d.id] = 'data:image/jpeg;base64,' + o.b64;
-  } else if (o.type === 'delPhoto') await api('deletePhoto', { id:o.photoId, officer:o.officer });
+  } else if (o.type === 'delPhoto') { try { await api('deletePhoto', { id:o.photoId, officer:o.officer }); } catch (e) { if (!/not found/i.test(e.message)) throw e; } }   // a retried delete may find the photo already gone
   else if (o.type === 'answer') await api('setAnswer', { item:o.item, answer:o.answer, remarks:o.remarks, officer:o.officer });
   else if (o.type === 'caption') await api('setCaption', { item:o.item, slot:o.slot, text:o.text, officer:o.officer });
 }
