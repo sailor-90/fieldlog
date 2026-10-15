@@ -192,7 +192,10 @@
   var t = document.getElementById('sp-t'); 'Weekly Report'.split('').forEach(function (ch, i) {
     var s = document.createElement('span'); s.textContent = ch === ' ' ? ' ' : ch; s.style.animationDelay = (0.85 + i * 0.045) + 's'; t.appendChild(s);
   });
-  var gone = function () { if (sp.parentNode) sp.parentNode.removeChild(sp); };
+  var NAVY = '#0b2a63', de = document.documentElement, bd = document.body, tm = document.querySelector('meta[name=theme-color]');
+  var keep = { h:de.style.background, b:bd ? bd.style.background : '', t:tm ? tm.getAttribute('content') : '' };
+  de.style.background = NAVY; if (bd) bd.style.background = NAVY; if (tm) tm.setAttribute('content', NAVY);    // no light strip below the splash (Safari bottom bar / safe area)
+  var gone = function () { de.style.background = keep.h; if (bd) bd.style.background = keep.b; if (tm) tm.setAttribute('content', keep.t); if (sp.parentNode) sp.parentNode.removeChild(sp); };
   sp.addEventListener('animationend', function (e) { if (e.animationName === 'spOut') gone(); });
   sp.addEventListener('click', function () { sp.classList.add('skip'); });
 })();</script>
