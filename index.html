@@ -304,15 +304,26 @@ async function sendOp(o) {
   else if (o.type === 'caption') await api('setCaption', { item:o.item, slot:o.slot, text:o.text, officer:o.officer });
 }
 /** Upload everything pending, oldest first. Stops at the first failure: the rest stays safe on the phone. */
+const isNet = (m) => /fetch|load failed|network|timeout|timed out|offline/i.test(String(m));
+function opLabel(o) {
+  const day = (x) => (WD && x.day != null ? `${SEC[x.section] || x.section} ${WD[x.day]}` : '');
+  return ({ photo:`Foto item ${o.item} (${o.slot + 1})`, delPhoto:'Hapus foto FSC', answer:`Jawaban item ${o.item}`, caption:`Keterangan item ${o.item}`,
+    wphoto:`Foto Weekly ${day(o)}`, wday:`Teks Weekly ${day(o)}`, wdel:'Hapus foto Weekly' })[o.type] || o.type;
+}
 async function syncOut(silent) {
   if (syncing || !OUT.length) return true;
-  syncing = true; let ok = 0, fail = '';
+  syncing = true; let ok = 0; const failed = []; let netFail = false;
   if (!S.w && OUT.some((o) => /^w(photo|day|del)$/.test(o.type))) { try { await wRefresh(); } catch {} }
   const q = OUT.slice().sort((a, b) => a.t - b.t), total = q.length;
   const run = async () => {
     for (const o of q) {
-      const lbl = $('#busyt'); if (lbl && !silent) lbl.textContent = `Mengunggah ${ok + 1} dari ${total}…`;
-      try { await sendOp(o); await outDel(o.id); ok++; } catch (e) { fail = e.message; break; }
+      const lbl = $('#busyt'); if (lbl && !silent) lbl.textContent = `Mengunggah ${ok + failed.length + 1} dari ${total}…`;
+      try { await sendOp(o); await outDel(o.id); ok++; }
+      catch (e) {
+        o.err = String(e.message || e); await outPut(o); failed.push(o);
+        if (isNet(o.err)) { netFail = true; break; }              // no connection: stop, the rest stays on the phone
+        // any other error belongs to this one item: keep it, go on with the others
+      }
     }
   };
   try { if (silent) await run(); else await busy('Mengunggah…', run); } finally { syncing = false; }
@@ -320,12 +331,27 @@ async function syncOut(silent) {
     if (q.some((o) => o.type[0] !== 'w' && o.type !== 'wphoto')) { try { await refresh(); } catch {} }
     if (q.some((o) => /^w(photo|day|del)$/.test(o.type))) { try { await wRefresh(); } catch {} }
   }
-  if (!silent || fail) {
-    if (fail) toast(`${ok} terkirim, ${total - ok} masih di HP. ${/fetch|load failed|network/i.test(fail) ? 'Tidak ada koneksi.' : fail}`, 'err');
+  if (!silent || failed.length) {
+    if (netFail) toast(`${ok} terkirim, sisanya masih di HP. Tidak ada koneksi.`, 'err');
+    else if (failed.length) toast(`${ok} terkirim, ${failed.length} gagal: ${opLabel(failed[0])} · ${failed[0].err}. Buka Antrean untuk melihat dan menghapusnya.`, 'err');
     else toast(`${ok} data terkirim ke cloud`, 'ok');
   }
   render();
-  return !fail;
+  return !failed.length;
+}
+/** The queue of everything still on the phone, with the last error of each item and a way to drop one that can never be sent. */
+function queueSheet() {
+  const q = OUT.slice().sort((a, b) => a.t - b.t);
+  const m = sheet(`<h3>Antrean di HP</h3><p>${q.length ? `${q.length} item belum terkirim. Item bermerah gagal terkirim: hapus dari antrean kalau memang tidak diperlukan.` : 'Antrean kosong. Semua sudah di cloud.'}</p>
+    ${q.map((o) => `<div class="row-i" style="cursor:default" data-q="${esc(o.id)}"><span class="tx"><b>${esc(opLabel(o))}</b>${o.err ? `<br><span class="small" style="color:var(--bad)">${esc(o.err)}</span>` : ''}</span><button class="btn ghost sm" data-dq="${esc(o.id)}" style="width:auto;color:var(--bad)">Hapus</button></div>`).join('')}
+    ${q.length ? '<button class="btn" id="qgo" style="margin-top:8px">Coba upload lagi</button>' : ''}
+    <button class="btn ghost" id="qx" style="margin-top:10px">Tutup</button>`);
+  $('#qx', m).onclick = () => m.remove();
+  if ($('#qgo', m)) $('#qgo', m).onclick = () => { m.remove(); syncOut(); };
+  $$('[data-dq]', m).forEach((b) => b.onclick = async () => {
+    if (!(await ask({ title:'Hapus dari antrean?', msg:'Item ini tidak akan dikirim ke cloud.', ok:'Hapus', danger:true }))) return;
+    await outDel(b.dataset.dq); m.remove(); render(); queueSheet();
+  });
 }
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const toLocalInput = (d) => { const p = (n) => String(n).padStart(2,'0'); return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`; };
@@ -709,7 +735,7 @@ function fsc() {
       <div class="meta">${open ? `<span>${st.answered}/${st.items} item dijawab</span><span>${st.have}/${st.slotsTotal} slot terisi foto</span>` : '<span>Belum dibuka</span>'}</div><div class="bar2"><i style="width:${open ? st.pct : 0}%"></i></div></button>`;
   }).join('');
   const pc = pendingCount();
-  main.innerHTML = `<div class="sync ${pc.all ? 'pend' : ''}"><div style="flex:1"><b>${pc.all ? `${pc.photos} foto · ${pc.other} perubahan belum diupload` : 'Semua sudah di cloud'}</b><small>${pc.all ? 'Aman tersimpan di HP. Upload kalau sudah lengkap.' : 'Tidak ada yang menunggu.'}</small></div>${pc.all ? `<button class="btn sm" id="upl" style="width:auto">${ic('send')} Upload</button>` : ''}</div>
+  main.innerHTML = `<div class="sync ${pc.all ? 'pend' : ''}"><div style="flex:1"><b>${pc.all ? `${pc.photos} foto · ${pc.other} perubahan belum diupload` : 'Semua sudah di cloud'}</b><small>${pc.all ? 'Aman tersimpan di HP. Upload kalau sudah lengkap.' : 'Tidak ada yang menunggu.'}</small></div>${pc.all ? `<div style="display:grid;gap:6px"><button class="btn sm" id="upl" style="width:auto">${ic('send')} Upload</button><button class="btn ghost sm" id="que" style="width:auto">Antrean</button></div>` : ''}</div>
     <label style="display:flex;align-items:center;gap:10px;margin:-4px 2px 14px;color:var(--mute);font-size:13px;font-weight:500"><input type="checkbox" id="auto" style="width:18px;height:18px" ${store.get('auto') === '1' ? 'checked' : ''}> Upload otomatis saat ada sinyal</label>
     <div class="sect" style="margin-top:4px">Pilih minggu</div>${cards}
     <div class="sect">Simpan & PDF</div>
@@ -720,6 +746,7 @@ function fsc() {
     </div>`;
   $$('.wk').forEach((b) => b.onclick = () => { if (!b.classList.contains('locked')) go('week', { w:+b.dataset.w }); else toast('Week ini belum dibuka oleh master.'); });
   if ($('#upl')) $('#upl').onclick = () => syncOut();
+  if ($('#que')) $('#que').onclick = queueSheet;
   $('#auto').onchange = (e) => { store.set('auto', e.target.checked ? '1' : '0'); if (e.target.checked && OUT.length && navigator.onLine) syncOut(true); };
   $('#a-save').onclick = checkAll; $('#a-load').onclick = loadAll; $('#a-pdf').onclick = downloadPdf;
 }
@@ -882,7 +909,9 @@ async function loadAll() {
 async function downloadPdf() {
   if (OUT.length) {
     if (!(await ask({ title:'Masih ada yang di HP', msg:`${pendingCount().photos} foto dan ${pendingCount().other} perubahan belum di cloud. PDF dibuat dari data cloud, jadi upload dulu.`, ok:'Upload dulu' }))) return;
-    if (!(await syncOut()) ) return;
+    if (!(await syncOut())) {
+      if (!(await ask({ title:'Sebagian belum terkirim', msg:'Ada isian di HP yang gagal diupload. Buat PDF dari data yang sudah ada di cloud saja? (Isian yang gagal tidak ikut.)', ok:'Buat PDF sekarang' }))) return;
+    }
   }
   try {
     await busy('Membuat PDF… (bisa 1–2 menit)', async () => {
@@ -1042,7 +1071,7 @@ function wk(t) {
   }).join('');
   const sg = r.signers, sgRow = (k, l) => `<tr><td class="mute">${l}</td><td>${sg[k] ? esc(sg[k].name) + (sg[k].hasSig ? '' : ' <span class="small mute">(tanpa ttd)</span>') : '<span class="mute">-</span>'}</td></tr>`;
   main.innerHTML = `<div class="hero"><p>Weekly Deck &amp; Engine Maintenance Report</p><h2>No. ${r.no}</h2><p style="margin-top:6px">Sabtu ${esc(r.dateText)}</p></div>
-    <div class="sync ${pc.all ? 'pend' : ''}"><div style="flex:1"><b>${pc.all ? `${pc.photos} foto · ${pc.other} perubahan belum diupload` : 'Semua sudah di cloud'}</b><small>${pc.all ? 'Aman tersimpan di HP. Upload kalau sudah lengkap.' : 'Tidak ada yang menunggu.'}</small></div>${pc.all ? `<button class="btn sm" id="upl" style="width:auto">${ic('send')} Upload</button>` : ''}</div>
+    <div class="sync ${pc.all ? 'pend' : ''}"><div style="flex:1"><b>${pc.all ? `${pc.photos} foto · ${pc.other} perubahan belum diupload` : 'Semua sudah di cloud'}</b><small>${pc.all ? 'Aman tersimpan di HP. Upload kalau sudah lengkap.' : 'Tidak ada yang menunggu.'}</small></div>${pc.all ? `<div style="display:grid;gap:6px"><button class="btn sm" id="upl" style="width:auto">${ic('send')} Upload</button><button class="btn ghost sm" id="que" style="width:auto">Antrean</button></div>` : ''}</div>
     ${days}
     ${master ? `<div class="sect">Master</div>
       <div class="card"><div style="display:flex;justify-content:space-between;align-items:center"><b>Tanda tangan di laporan</b><button class="btn ghost sm" id="wsg" style="width:auto">${ic('edit')} Atur</button></div>
@@ -1053,13 +1082,16 @@ function wk(t) {
       <button class="btn ghost" id="wfin" style="margin-top:14px">${ic('check')} Selesai (laporan sudah dikirim)</button>` : ''}`;
   $$('.row-i').forEach((x) => x.onclick = () => go('wday', { sec:x.dataset.s, day:+x.dataset.d }));
   if ($('#upl')) $('#upl').onclick = () => syncOut();
+  if ($('#que')) $('#que').onclick = queueSheet;
   if (!master) return;
   $('#wsg').onclick = () => wSigners();
   $('#wcr').onclick = () => go('wcrew');
   $('#whd').onclick = () => wHeaderEdit();
   $('#wgen').onclick = async () => {
     if (OUT.length && !(await ask({ title:'Masih ada yang di HP', msg:'Laporan dibuat dari data di cloud. Upload dulu supaya isian terbaru ikut.', ok:'Upload dulu' }))) return;
-    if (OUT.length && !(await syncOut())) return;
+    if (OUT.length && !(await syncOut())) {
+      if (!(await ask({ title:'Sebagian belum terkirim', msg:'Ada isian di HP ini yang gagal diupload. Ambil file dari data yang sudah ada di cloud saja? (Isian yang gagal tidak ikut.)', ok:'Ambil file sekarang' }))) return;
+    }
     try {
       const g = await busy('Menyusun file… (bisa 1–3 menit)', () => api('wGenerate'));
       $('#wout').innerHTML = `<div class="card"><b>File siap</b><p class="mute small" style="margin:6px 0 12px">${g.pages} halaman · tersimpan di folder <b>${esc(g.name)}</b> di Google Drive.</p>
