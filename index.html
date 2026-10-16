@@ -274,7 +274,9 @@ async function outAdd(o) {
 }
 async function outLoad() { try { OUT = (await idb.ops()) || []; } catch { OUT = []; } }
 const isPhotoOp = (o) => o.type === 'photo' || o.type === 'wphoto';
-const pendingCount = () => ({ photos:OUT.filter(isPhotoOp).length, other:OUT.filter((o) => !isPhotoOp(o)).length, all:OUT.length, failed:OUT.filter((o) => o.err).length });
+const modOf = (o) => (/^w(photo|day|del)$/.test(o.type) ? 'weekly' : 'fsc');            // FSC and Weekly have separate queues
+const opsOf = (mod) => (mod ? OUT.filter((o) => modOf(o) === mod) : OUT);
+const pendingCount = (mod) => { const q = opsOf(mod); return { photos:q.filter(isPhotoOp).length, other:q.filter((o) => !isPhotoOp(o)).length, all:q.length, failed:q.filter((o) => o.err).length }; };
 const isLocal = (id) => String(id)[0] === 'L';
 const delIds = () => new Set(OUT.filter((o) => o.type === 'delPhoto' || (o.type === 'photo' && o.replaceId)).map((o) => o.photoId || o.replaceId));
 function applyOut() {                                      // lay the pending answers/captions over what the cloud returned
@@ -311,11 +313,11 @@ function opLabel(o) {
   return ({ photo:`Foto item ${o.item} (${o.slot + 1})`, delPhoto:'Hapus foto FSC', answer:`Jawaban item ${o.item}`, caption:`Keterangan item ${o.item}`,
     wphoto:`Foto Weekly ${day(o)}`, wday:`Teks Weekly ${day(o)}`, wdel:'Hapus foto Weekly' })[o.type] || o.type;
 }
-async function syncOut(silent) {
-  if (syncing || !OUT.length) return true;
+async function syncOut(silent, mod) {
+  if (syncing || !opsOf(mod).length) return true;
   syncing = true; let ok = 0; const failed = []; let netFail = false;
   if (!S.w && OUT.some((o) => /^w(photo|day|del)$/.test(o.type))) { try { await wRefresh(); } catch {} }
-  const q = OUT.slice().sort((a, b) => a.t - b.t), total = q.length;
+  const q = opsOf(mod).slice().sort((a, b) => a.t - b.t), total = q.length;
   const run = async () => {
     for (const o of q) {
       const lbl = $('#busyt'); if (lbl && !silent) lbl.textContent = `Mengunggah ${ok + failed.length + 1} dari ${total}…`;
@@ -341,17 +343,17 @@ async function syncOut(silent) {
   return !failed.length;
 }
 /** The queue of everything still on the phone, with the last error of each item and a way to drop one that can never be sent. */
-function queueSheet() {
-  const q = OUT.slice().sort((a, b) => a.t - b.t);
+function queueSheet(mod) {
+  const q = opsOf(mod).slice().sort((a, b) => a.t - b.t);
   const m = sheet(`<h3>Antrean di HP</h3><p>${q.length ? `${q.length} item belum terkirim. Item bermerah gagal terkirim: hapus dari antrean kalau memang tidak diperlukan.` : 'Antrean kosong. Semua sudah di cloud.'}</p>
     ${q.map((o) => `<div class="row-i" style="cursor:default" data-q="${esc(o.id)}"><span class="tx"><b>${esc(opLabel(o))}</b>${o.err ? `<br><span class="small" style="color:var(--bad)">${esc(o.err)}</span>` : ''}</span><button class="btn ghost sm" data-dq="${esc(o.id)}" style="width:auto;color:var(--bad)">Hapus</button></div>`).join('')}
     ${q.length ? '<button class="btn" id="qgo" style="margin-top:8px">Coba upload lagi</button>' : ''}
     <button class="btn ghost" id="qx" style="margin-top:10px">Tutup</button>`);
   $('#qx', m).onclick = () => m.remove();
-  if ($('#qgo', m)) $('#qgo', m).onclick = () => { m.remove(); syncOut(); };
+  if ($('#qgo', m)) $('#qgo', m).onclick = () => { m.remove(); syncOut(false, mod); };
   $$('[data-dq]', m).forEach((b) => b.onclick = async () => {
     if (!(await ask({ title:'Hapus dari antrean?', msg:'Item ini tidak akan dikirim ke cloud.', ok:'Hapus', danger:true }))) return;
-    await outDel(b.dataset.dq); m.remove(); render(); queueSheet();
+    await outDel(b.dataset.dq); m.remove(); render(); queueSheet(mod);
   });
 }
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
@@ -697,7 +699,7 @@ function who() {
 function home() {
   $('#title').textContent = '';
   const p = S.period;
-  main.innerHTML = `<div class="hero"><p>Selamat datang,</p><h2>${esc(S.officer)}</h2><p style="margin-top:8px">${p ? `${esc(p.label)} · Week ${p.activeWeek}` : 'Belum ada periode aktif'}</p>${pendingCount().all ? `<p style="margin-top:8px"><b>${pendingCount().photos} foto belum diupload${pendingCount().failed ? ` · ${pendingCount().failed} gagal` : ''}</b></p>` : ''}</div>
+  main.innerHTML = `<div class="hero"><p>Selamat datang,</p><h2>${esc(S.officer)}</h2><p style="margin-top:8px">${p ? `${esc(p.label)} · Week ${p.activeWeek}` : 'Belum ada periode aktif'}</p>${pendingCount().all ? `<p style="margin-top:8px"><b>${[['FSC', 'fsc'], ['Weekly', 'weekly']].map(([n, m]) => { const c = pendingCount(m); return c.all ? `${n}: ${c.photos} foto${c.other ? ` + ${c.other} perubahan` : ''}${c.failed ? ` (${c.failed} gagal)` : ''}` : ''; }).filter(Boolean).join(' · ')} belum diupload</b></p>` : ''}</div>
     <div style="text-align:center;margin:-4px 0 6px"><button id="chg" class="btn ghost sm" style="width:auto">Bukan Anda? Ganti nama</button></div>
     <div class="sect" style="margin-top:6px">Pilih laporan</div>
     <button class="mod" id="m1"><span class="ico" style="background:var(--grad)">${ic('clip', 28)}</span><div><b>FSC Checklist</b><span class="s">${p ? esc(p.title) + ' · ' + esc(p.code) : 'Menunggu master membuat periode baru'}</span></div><span class="go">${ic('chev')}</span></button>
@@ -735,7 +737,7 @@ function fsc() {
     return `<button class="wk ${open ? '' : 'locked'}" data-w="${w}"><div class="t"><div style="display:flex;align-items:center"><span class="n">${w}</span>Week ${w}${w === p.activeWeek ? '<span class="tag now">Aktif</span>' : ''}</div>${open ? ic('chev', 20) : ic('lock', 18)}</div>
       <div class="meta">${open ? `<span>${st.answered}/${st.items} item dijawab</span><span>${st.have}/${st.slotsTotal} slot terisi foto</span>` : '<span>Belum dibuka</span>'}</div><div class="bar2"><i style="width:${open ? st.pct : 0}%"></i></div></button>`;
   }).join('');
-  const pc = pendingCount();
+  const pc = pendingCount('fsc');
   main.innerHTML = `<div class="sync ${pc.all ? 'pend' : ''}"><div style="flex:1"><b>${pc.all ? `${pc.photos} foto · ${pc.other} perubahan belum diupload` : 'Semua sudah di cloud'}</b><small>${pc.failed ? `<span style="color:var(--bad);font-weight:700">${pc.failed} gagal terkirim · tekan Antrean untuk melihat alasannya</span>` : pc.all ? 'Aman tersimpan di HP. Upload kalau sudah lengkap.' : 'Tidak ada yang menunggu.'}</small></div>${pc.all ? `<div style="display:grid;gap:6px"><button class="btn sm" id="upl" style="width:auto">${ic('send')} Upload</button><button class="btn ghost sm" id="que" style="width:auto">Antrean</button></div>` : ''}</div>
     <label style="display:flex;align-items:center;gap:10px;margin:-4px 2px 14px;color:var(--mute);font-size:13px;font-weight:500"><input type="checkbox" id="auto" style="width:18px;height:18px" ${store.get('auto') === '1' ? 'checked' : ''}> Upload otomatis saat ada sinyal</label>
     <div class="sect" style="margin-top:4px">Pilih minggu</div>${cards}
@@ -746,8 +748,8 @@ function fsc() {
       <button class="tile" id="a-pdf" style="grid-column:1/-1;min-height:0"><span class="c" style="background:linear-gradient(135deg,#7c3aed,#a78bfa)">${ic('pdf')}</span><div><b>Create PDF</b><small>PDF dari data di cloud (upload dulu)</small></div></button>
     </div>`;
   $$('.wk').forEach((b) => b.onclick = () => { if (!b.classList.contains('locked')) go('week', { w:+b.dataset.w }); else toast('Week ini belum dibuka oleh master.'); });
-  if ($('#upl')) $('#upl').onclick = () => syncOut();
-  if ($('#que')) $('#que').onclick = queueSheet;
+  if ($('#upl')) $('#upl').onclick = () => syncOut(false, 'fsc');
+  if ($('#que')) $('#que').onclick = () => queueSheet('fsc');
   $('#auto').onchange = (e) => { store.set('auto', e.target.checked ? '1' : '0'); if (e.target.checked && OUT.length && navigator.onLine) syncOut(true); };
   $('#a-save').onclick = checkAll; $('#a-load').onclick = loadAll; $('#a-pdf').onclick = downloadPdf;
 }
@@ -889,7 +891,7 @@ function checkAll() {
     const missing = i.slots.filter((_, k) => !photosOf(i.item, k).length).length;
     return { i, missing, unanswered: !S.answers[i.item] };
   }).filter((x) => x.missing || x.unanswered);
-  const nPhotos = ph.filter((p) => p.officer === S.officer).length, pc = pendingCount();
+  const nPhotos = ph.filter((p) => p.officer === S.officer).length, pc = pendingCount('fsc');
   const rows = problems.map((x) => `<button class="row-i" style="width:100%;text-align:left" data-go="${esc(x.i.item)}" data-w="${x.i.week}"><span class="no">${esc(x.i.item)}</span><span class="tx">${[x.missing ? x.missing + ' slot belum ada foto' : '', x.unanswered ? 'belum dijawab' : ''].filter(Boolean).join(' · ')}</span>${ic('chev')}</button>`).join('');
   const m = sheet(`<h3>${problems.length ? 'Ada yang belum lengkap' : 'Semua lengkap'}</h3>
     <p>Anda mengerjakan ${nPhotos} foto di ${mine.length} item.${problems.length ? '' : ' Tidak ada item yang kurang foto atau belum dijawab.'}</p>
@@ -897,7 +899,7 @@ function checkAll() {
     ${pc.all ? '<button class="btn" id="up" style="margin-top:12px">Upload ke cloud sekarang</button>' : ''}
     <button class="btn ghost" id="ok" style="margin-top:10px">Tutup</button>`);
   $('#ok', m).onclick = () => m.remove();
-  if ($('#up', m)) $('#up', m).onclick = () => { m.remove(); syncOut(); };
+  if ($('#up', m)) $('#up', m).onclick = () => { m.remove(); syncOut(false, 'fsc'); };
   $$('[data-go]', m).forEach((b) => b.onclick = () => { m.remove(); go('item', { w:+b.dataset.w, item:b.dataset.go }); });
   render();
 }
@@ -908,10 +910,11 @@ async function loadAll() {
   } catch (e) { toast(e.message, 'err'); }
 }
 async function downloadPdf() {
-  if (OUT.length) {
-    if (!(await ask({ title:'Masih ada yang di HP', msg:`${pendingCount().photos} foto dan ${pendingCount().other} perubahan belum di cloud. PDF dibuat dari data cloud, jadi upload dulu.`, ok:'Upload dulu' }))) return;
-    if (!(await syncOut())) {
-      if (!(await ask({ title:'Sebagian belum terkirim', msg:'Ada isian di HP yang gagal diupload. Buat PDF dari data yang sudah ada di cloud saja? (Isian yang gagal tidak ikut.)', ok:'Buat PDF sekarang' }))) return;
+  const pcf = pendingCount('fsc');
+  if (pcf.all) {
+    if (!(await ask({ title:'Masih ada yang di HP', msg:`${pcf.photos} foto dan ${pcf.other} perubahan FSC belum di cloud. PDF dibuat dari data cloud, jadi upload dulu.`, ok:'Upload dulu' }))) return;
+    if (!(await syncOut(false, 'fsc'))) {
+      if (!(await ask({ title:'Sebagian belum terkirim', msg:'Ada isian FSC di HP yang gagal diupload. Buat PDF dari data yang sudah ada di cloud saja? (Isian yang gagal tidak ikut.)', ok:'Buat PDF sekarang' }))) return;
     }
   }
   try {
@@ -1061,7 +1064,7 @@ function wk(t) {
     if (!master) { main.innerHTML = '<div class="card mute" style="text-align:center">Belum ada laporan mingguan aktif.<br>Hubungi master untuk membuatnya.</div>'; return; }
     return wCreate();
   }
-  const pc = pendingCount();
+  const pc = pendingCount('weekly');
   const days = ['deck', 'engine'].map((sec) => {
     const rows = [0, 1, 2, 3, 4, 5, 6].map((d) => {
       const dd = wDayOf(sec, d), ph = wPhotosOf(sec, d);
@@ -1082,15 +1085,15 @@ function wk(t) {
       <button class="btn" id="wgen">${ic('pdf')} Ambil file (Word + PDF)</button><div id="wout" style="margin-top:14px"></div>
       <button class="btn ghost" id="wfin" style="margin-top:14px">${ic('check')} Selesai (laporan sudah dikirim)</button>` : ''}`;
   $$('.row-i').forEach((x) => x.onclick = () => go('wday', { sec:x.dataset.s, day:+x.dataset.d }));
-  if ($('#upl')) $('#upl').onclick = () => syncOut();
-  if ($('#que')) $('#que').onclick = queueSheet;
+  if ($('#upl')) $('#upl').onclick = () => syncOut(false, 'weekly');
+  if ($('#que')) $('#que').onclick = () => queueSheet('weekly');
   if (!master) return;
   $('#wsg').onclick = () => wSigners();
   $('#wcr').onclick = () => go('wcrew');
   $('#whd').onclick = () => wHeaderEdit();
   $('#wgen').onclick = async () => {
-    if (OUT.length && !(await ask({ title:'Masih ada yang di HP', msg:'Laporan dibuat dari data di cloud. Upload dulu supaya isian terbaru ikut.', ok:'Upload dulu' }))) return;
-    if (OUT.length && !(await syncOut())) {
+    if (pendingCount('weekly').all && !(await ask({ title:'Masih ada yang di HP', msg:'Laporan dibuat dari data di cloud. Upload dulu supaya isian Weekly terbaru ikut.', ok:'Upload dulu' }))) return;
+    if (pendingCount('weekly').all && !(await syncOut(false, 'weekly'))) {
       if (!(await ask({ title:'Sebagian belum terkirim', msg:'Ada isian di HP ini yang gagal diupload. Ambil file dari data yang sudah ada di cloud saja? (Isian yang gagal tidak ikut.)', ok:'Ambil file sekarang' }))) return;
     }
     try {
