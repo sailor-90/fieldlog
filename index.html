@@ -1073,13 +1073,13 @@ function wk(t) {
     }).join('');
     return `<div class="sect">${SEC[sec]}${w.canEdit[sec] ? '' : ' · hanya lihat'}</div>${rows}`;
   }).join('');
-  const sg = r.signers, sgRow = (k, l) => `<tr><td class="mute">${l}</td><td>${sg[k] ? esc(sg[k].name) + (sg[k].hasSig ? '' : ' <span class="small mute">(tanpa ttd)</span>') : '<span class="mute">-</span>'}</td></tr>`;
+  const sgRows = r.signers.map((s) => `<tr><td class="mute">${esc(s.rank || '-')}</td><td>${s.name ? esc(s.name) + (s.hasSig ? '' : ' <span class="small mute">(tanpa ttd)</span>') : '<span class="mute">-</span>'}</td></tr>`).join('');
   main.innerHTML = `<div class="hero"><p>Weekly Deck &amp; Engine Maintenance Report</p><h2>No. ${r.no}</h2><p style="margin-top:6px">Sabtu ${esc(r.dateText)}</p></div>
     <div class="sync ${pc.all ? 'pend' : ''}"><div style="flex:1"><b>${pc.all ? `${pc.photos} foto · ${pc.other} perubahan belum diupload` : 'Semua sudah di cloud'}</b><small>${pc.failed ? `<span style="color:var(--bad);font-weight:700">${pc.failed} gagal terkirim · tekan Antrean untuk melihat alasannya</span>` : pc.all ? 'Aman tersimpan di HP. Upload kalau sudah lengkap.' : 'Tidak ada yang menunggu.'}</small></div>${pc.all ? `<div style="display:grid;gap:6px"><button class="btn sm" id="upl" style="width:auto">${ic('send')} Upload</button><button class="btn ghost sm" id="que" style="width:auto">Antrean</button></div>` : ''}</div>
     ${days}
     ${master ? `<div class="sect">Master</div>
       <div class="card"><div style="display:flex;justify-content:space-between;align-items:center"><b>Tanda tangan di laporan</b><button class="btn ghost sm" id="wsg" style="width:auto">${ic('edit')} Atur</button></div>
-        <table style="margin-top:6px">${sgRow('master', 'Master')}${sgRow('co', 'Chief Officer')}${sgRow('ce', 'Chief Engineer')}${sgRow('e2', '2nd Engineer')}</table></div>
+        <table style="margin-top:6px">${sgRows}</table></div>
       <button class="btn ghost" id="wcr" style="margin-bottom:10px">Daftar kru &amp; tanda tangan</button>
       <button class="btn ghost" id="whd" style="margin-bottom:10px">${ic('edit')} Ubah nomor / tanggal laporan</button>
       <button class="btn" id="wgen">${ic('pdf')} Ambil file (Word + PDF)</button><div id="wout" style="margin-top:14px"></div>
@@ -1110,44 +1110,60 @@ function wk(t) {
   };
 }
 
-const SIGN_RANK = { master:/master/i, co:/chief officer/i, ce:/chief engineer/i, e2:/2nd engineer/i };
-function crewOptions(sel, key) {
-  const crew = (S.w.crew || []).filter((c) => c.active || c.crewId === sel), re = SIGN_RANK[key];
-  const opt = (c) => `<option value="${esc(c.crewId)}" ${c.crewId === sel ? 'selected' : ''}>${esc(c.fullName || c.shortName)}${c.hasSig ? '' : ' (tanpa ttd)'}</option>`;
-  const fit = re ? crew.filter((c) => re.test(c.rank)) : crew, rest = re ? crew.filter((c) => !re.test(c.rank)) : [];
-  return '<option value="">- pilih -</option>' + fit.map(opt).join('') + (rest.length ? `<optgroup label="Jabatan lain">${rest.map(opt).join('')}</optgroup>` : '');
+const RANKS = ['Master', '2nd Master', 'Chief Officer', '2nd Officer', '3rd Officer', 'Chief Engineer', '1st Engineer', '2nd Engineer', '3rd Engineer'];
+function crewOptions(sel) {                                  // every active person: the signature follows the NAME, not the rank
+  const crew = (S.w.crew || []).filter((c) => c.active || c.crewId === sel).sort((a, b) => (a.fullName || a.shortName).localeCompare(b.fullName || b.shortName));
+  return '<option value="">- pilih nama -</option>' + crew.map((c) => `<option value="${esc(c.crewId)}" ${c.crewId === sel ? 'selected' : ''}>${esc(c.fullName || c.shortName)}${c.hasSig ? '' : ' (tanpa ttd)'}</option>`).join('');
 }
+function rankOptions(sel) {
+  const list = RANKS.includes(sel) || !sel ? RANKS : RANKS.concat([sel]);
+  return '<option value="">- pilih jabatan -</option>' + list.map((r) => `<option ${r === sel ? 'selected' : ''}>${esc(r)}</option>`).join('');
+}
+/** Four signing positions on the report: pick the RANK and the PERSON for each one, in any order. */
+function signerRows(prefix, list) {
+  const rows = [0, 1, 2, 3].map((i) => { const s = list[i] || { rank:'', crewId:'' };
+    return `<div class="card" style="padding:12px 14px;margin:10px 0 0"><div class="small mute" style="font-weight:700">Posisi ${i + 1}</div>
+      <label style="margin-top:6px">Jabatan</label><select class="f" id="${prefix}r${i}">${rankOptions(s.rank)}</select>
+      <label>Nama</label><select class="f" id="${prefix}n${i}">${crewOptions(s.crewId)}</select></div>`; }).join('');
+  return rows;
+}
+function wireSigners(root, prefix) {                         // choosing a name fills in his/her usual rank (still changeable)
+  [0, 1, 2, 3].forEach((i) => {
+    const rs = $('#' + prefix + 'r' + i, root), ns = $('#' + prefix + 'n' + i, root);
+    ns.onchange = () => { const c = S.w.crew.find((x) => x.crewId === ns.value); if (c && RANKS.includes(c.rank) && (!rs.value || rs.dataset.auto === '1')) { rs.value = c.rank; rs.dataset.auto = '1'; } };
+    rs.onchange = () => { rs.dataset.auto = '0'; };
+  });
+}
+const readSigners = (root, prefix) => [0, 1, 2, 3].map((i) => ({ rank:$('#' + prefix + 'r' + i, root).value, crewId:$('#' + prefix + 'n' + i, root).value }));
 function wCreate() {
   const n = S.w.next, ds = S.w.defaultSigners;
   main.innerHTML = `<div class="hero"><p>Weekly Deck &amp; Engine Report</p><h2>Create new</h2><p style="margin-top:6px">Isi nomor, tanggal Sabtu, dan penandatangan.</p></div>
     <div class="card"><label style="margin-top:0">Nomor laporan</label><input class="f" id="wn" type="number" inputmode="numeric" value="${n.no}">
       <label>Tanggal laporan (hari Sabtu)</label><input class="f" id="wd" type="date" value="${esc(n.date)}">
-      <label>Master</label><select class="f" id="s-master">${crewOptions(ds.master, 'master')}</select>
-      <label>Chief Officer</label><select class="f" id="s-co">${crewOptions(ds.co, 'co')}</select>
-      <label>Chief Engineer</label><select class="f" id="s-ce">${crewOptions(ds.ce, 'ce')}</select>
-      <label>2nd Engineer</label><select class="f" id="s-e2">${crewOptions(ds.e2, 'e2')}</select>
+      <div class="sect" style="margin:16px 0 0">Penandatangan (jabatan dan nama bebas dipilih)</div>${signerRows('s', ds)}
       <button class="btn" id="wc" style="margin-top:16px">Create new</button></div>
     <button class="btn ghost" id="wcr2" style="margin-top:10px">Daftar kru &amp; tanda tangan</button>`;
   $('#wcr2').onclick = () => go('wcrew');
+  wireSigners(main, 's');
   $('#wc').onclick = async () => {
     const date = $('#wd').value;
     if (date && new Date(date + 'T12:00:00Z').getUTCDay() !== 6 && !(await ask({ title:'Bukan hari Sabtu', msg:'Tanggal itu bukan hari Sabtu. Lanjutkan?', ok:'Lanjut' }))) return;
     try {
-      const signers = {}; ['master', 'co', 'ce', 'e2'].forEach((k) => { signers[k] = $('#s-' + k).value; });
+      const signers = readSigners(main, 's');
       await busy('Membuat laporan…', () => api('wCreate', { no:+$('#wn').value, date, signers }));
       await wRefresh(); toast('Laporan dibuat', 'ok'); render();
     } catch (e) { toast(e.message, 'err'); }
   };
 }
 function wSigners() {
-  const sg = wRep().signers, m = sheet(`<h3>Tanda tangan di laporan</h3><p>Nama dan tanda tangan orangnya tercetak otomatis di kotak atas laporan.</p>
-    ${[['master', 'Master'], ['co', 'Chief Officer'], ['ce', 'Chief Engineer'], ['e2', '2nd Engineer']].map(([k, l]) => `<label>${l}</label><select class="f" id="g-${k}">${crewOptions(sg[k] ? sg[k].crewId : '', k)}</select>`).join('')}
+  const m = sheet(`<h3>Tanda tangan di laporan</h3><p>Pilih jabatan dan nama untuk tiap posisi. Urutannya bebas. Nama dan tanda tangan orangnya tercetak otomatis.</p>
+    ${signerRows('g', wRep().signers)}
     <div class="two" style="margin-top:14px"><button class="btn ghost" id="n">Batal</button><button class="btn" id="y">Simpan</button></div>`);
+  wireSigners(m, 'g');
   $('#n', m).onclick = () => m.remove();
   $('#y', m).onclick = async () => {
     try {
-      const signers = {}; ['master', 'co', 'ce', 'e2'].forEach((k) => { signers[k] = $('#g-' + k, m).value; });
-      await busy('Menyimpan…', () => api('wSetSigners', { signers })); await wRefresh(); m.remove(); render();
+      await busy('Menyimpan…', () => api('wSetSigners', { signers:readSigners(m, 'g') })); await wRefresh(); m.remove(); render();
     } catch (e) { toast(e.message, 'err'); }
   };
 }
