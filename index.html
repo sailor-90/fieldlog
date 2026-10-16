@@ -273,7 +273,7 @@ async function outAdd(o) {
 }
 async function outLoad() { try { OUT = (await idb.ops()) || []; } catch { OUT = []; } }
 const isPhotoOp = (o) => o.type === 'photo' || o.type === 'wphoto';
-const pendingCount = () => ({ photos:OUT.filter(isPhotoOp).length, other:OUT.filter((o) => !isPhotoOp(o)).length, all:OUT.length });
+const pendingCount = () => ({ photos:OUT.filter(isPhotoOp).length, other:OUT.filter((o) => !isPhotoOp(o)).length, all:OUT.length, failed:OUT.filter((o) => o.err).length });
 const isLocal = (id) => String(id)[0] === 'L';
 const delIds = () => new Set(OUT.filter((o) => o.type === 'delPhoto' || (o.type === 'photo' && o.replaceId)).map((o) => o.photoId || o.replaceId));
 function applyOut() {                                      // lay the pending answers/captions over what the cloud returned
@@ -369,7 +369,7 @@ async function api(action, params = {}) {
 }
 function toast(text, kind) {
   const d = document.createElement('div'); d.className = 'tst ' + (kind || ''); d.textContent = text;
-  $('#toast').append(d); setTimeout(() => d.remove(), 3800);
+  $('#toast').append(d); setTimeout(() => d.remove(), kind === 'err' ? 9000 : 3800);
 }
 async function busy(text, fn) {
   $('#busyt').textContent = text; $('#busy').classList.remove('hide');
@@ -696,7 +696,7 @@ function who() {
 function home() {
   $('#title').textContent = '';
   const p = S.period;
-  main.innerHTML = `<div class="hero"><p>Selamat datang,</p><h2>${esc(S.officer)}</h2><p style="margin-top:8px">${p ? `${esc(p.label)} · Week ${p.activeWeek}` : 'Belum ada periode aktif'}</p>${pendingCount().all ? `<p style="margin-top:8px"><b>${pendingCount().photos} foto belum diupload</b></p>` : ''}</div>
+  main.innerHTML = `<div class="hero"><p>Selamat datang,</p><h2>${esc(S.officer)}</h2><p style="margin-top:8px">${p ? `${esc(p.label)} · Week ${p.activeWeek}` : 'Belum ada periode aktif'}</p>${pendingCount().all ? `<p style="margin-top:8px"><b>${pendingCount().photos} foto belum diupload${pendingCount().failed ? ` · ${pendingCount().failed} gagal` : ''}</b></p>` : ''}</div>
     <div style="text-align:center;margin:-4px 0 6px"><button id="chg" class="btn ghost sm" style="width:auto">Bukan Anda? Ganti nama</button></div>
     <div class="sect" style="margin-top:6px">Pilih laporan</div>
     <button class="mod" id="m1"><span class="ico" style="background:var(--grad)">${ic('clip', 28)}</span><div><b>FSC Checklist</b><span class="s">${p ? esc(p.title) + ' · ' + esc(p.code) : 'Menunggu master membuat periode baru'}</span></div><span class="go">${ic('chev')}</span></button>
@@ -735,7 +735,7 @@ function fsc() {
       <div class="meta">${open ? `<span>${st.answered}/${st.items} item dijawab</span><span>${st.have}/${st.slotsTotal} slot terisi foto</span>` : '<span>Belum dibuka</span>'}</div><div class="bar2"><i style="width:${open ? st.pct : 0}%"></i></div></button>`;
   }).join('');
   const pc = pendingCount();
-  main.innerHTML = `<div class="sync ${pc.all ? 'pend' : ''}"><div style="flex:1"><b>${pc.all ? `${pc.photos} foto · ${pc.other} perubahan belum diupload` : 'Semua sudah di cloud'}</b><small>${pc.all ? 'Aman tersimpan di HP. Upload kalau sudah lengkap.' : 'Tidak ada yang menunggu.'}</small></div>${pc.all ? `<div style="display:grid;gap:6px"><button class="btn sm" id="upl" style="width:auto">${ic('send')} Upload</button><button class="btn ghost sm" id="que" style="width:auto">Antrean</button></div>` : ''}</div>
+  main.innerHTML = `<div class="sync ${pc.all ? 'pend' : ''}"><div style="flex:1"><b>${pc.all ? `${pc.photos} foto · ${pc.other} perubahan belum diupload` : 'Semua sudah di cloud'}</b><small>${pc.failed ? `<span style="color:var(--bad);font-weight:700">${pc.failed} gagal terkirim · tekan Antrean untuk melihat alasannya</span>` : pc.all ? 'Aman tersimpan di HP. Upload kalau sudah lengkap.' : 'Tidak ada yang menunggu.'}</small></div>${pc.all ? `<div style="display:grid;gap:6px"><button class="btn sm" id="upl" style="width:auto">${ic('send')} Upload</button><button class="btn ghost sm" id="que" style="width:auto">Antrean</button></div>` : ''}</div>
     <label style="display:flex;align-items:center;gap:10px;margin:-4px 2px 14px;color:var(--mute);font-size:13px;font-weight:500"><input type="checkbox" id="auto" style="width:18px;height:18px" ${store.get('auto') === '1' ? 'checked' : ''}> Upload otomatis saat ada sinyal</label>
     <div class="sect" style="margin-top:4px">Pilih minggu</div>${cards}
     <div class="sect">Simpan & PDF</div>
@@ -1071,7 +1071,7 @@ function wk(t) {
   }).join('');
   const sg = r.signers, sgRow = (k, l) => `<tr><td class="mute">${l}</td><td>${sg[k] ? esc(sg[k].name) + (sg[k].hasSig ? '' : ' <span class="small mute">(tanpa ttd)</span>') : '<span class="mute">-</span>'}</td></tr>`;
   main.innerHTML = `<div class="hero"><p>Weekly Deck &amp; Engine Maintenance Report</p><h2>No. ${r.no}</h2><p style="margin-top:6px">Sabtu ${esc(r.dateText)}</p></div>
-    <div class="sync ${pc.all ? 'pend' : ''}"><div style="flex:1"><b>${pc.all ? `${pc.photos} foto · ${pc.other} perubahan belum diupload` : 'Semua sudah di cloud'}</b><small>${pc.all ? 'Aman tersimpan di HP. Upload kalau sudah lengkap.' : 'Tidak ada yang menunggu.'}</small></div>${pc.all ? `<div style="display:grid;gap:6px"><button class="btn sm" id="upl" style="width:auto">${ic('send')} Upload</button><button class="btn ghost sm" id="que" style="width:auto">Antrean</button></div>` : ''}</div>
+    <div class="sync ${pc.all ? 'pend' : ''}"><div style="flex:1"><b>${pc.all ? `${pc.photos} foto · ${pc.other} perubahan belum diupload` : 'Semua sudah di cloud'}</b><small>${pc.failed ? `<span style="color:var(--bad);font-weight:700">${pc.failed} gagal terkirim · tekan Antrean untuk melihat alasannya</span>` : pc.all ? 'Aman tersimpan di HP. Upload kalau sudah lengkap.' : 'Tidak ada yang menunggu.'}</small></div>${pc.all ? `<div style="display:grid;gap:6px"><button class="btn sm" id="upl" style="width:auto">${ic('send')} Upload</button><button class="btn ghost sm" id="que" style="width:auto">Antrean</button></div>` : ''}</div>
     ${days}
     ${master ? `<div class="sect">Master</div>
       <div class="card"><div style="display:flex;justify-content:space-between;align-items:center"><b>Tanda tangan di laporan</b><button class="btn ghost sm" id="wsg" style="width:auto">${ic('edit')} Atur</button></div>
