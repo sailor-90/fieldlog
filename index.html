@@ -412,8 +412,8 @@ const cur = () => stack[stack.length - 1];
 function render() {
   const t = cur();
   $('#back').classList.toggle('hide', stack.length < 2);
-  $('#logout').classList.toggle('hide', !['home', 'master'].includes(t.view));
-  ({ login, who, home, soon, fsc, week, item, master, wk, wday, wcrew }[t.view])(t);
+  $('#logout').classList.toggle('hide', !['home', 'mhome'].includes(t.view));
+  ({ login, who, home, soon, fsc, week, item, master, wk, wday, wcrew, mhome }[t.view])(t);
 }
 
 /* ---------- photo pipeline: keep resolution (capped), stamp date/time inside the photo, cut JPEG quality ---------- */
@@ -651,7 +651,7 @@ async function signIn(code, remember, auto) {
     store.set('code', remember ? code : '');
     if (d.period && d.period.shipName) store.set('ship', d.period.shipName);
     try { idb.setMeta('login', { code, role:d.role, officers:d.officers, period:d.period, forms:d.forms || [], defaults:d.defaults || {} }); } catch {}
-    if (d.role === 'master') return reset('master');
+    if (d.role === 'master') return reset('mhome');
     const saved = store.get('officer');
     if (auto && saved && d.officers.includes(saved)) {          // remembered device: straight to the home screen
       S.officer = saved; await busy('Memuat data…', refresh); return reset('home');
@@ -1294,15 +1294,25 @@ function wCrewEdit(c) {
   };
 }
 
-// master: a button to the weekly module at the top of the master screen
-{
-  const _master = master;
-  master = async function (t) {
-    await _master(t);
-    if (cur().view !== 'master') return;
-    main.insertAdjacentHTML('afterbegin', `<button class="mod" id="mwk" style="margin-bottom:14px"><span class="ico" style="background:linear-gradient(135deg,#f59e0b,#ef4444)">${ic('wrench', 28)}</span><div><b>Weekly Deck &amp; Engine Report</b><span class="s">Buat laporan, kru, ambil file</span></div><span class="go">${ic('chev')}</span></button>`);
-    $('#mwk').onclick = async () => { try { await busy('Memuat…', wRefresh); go('wk'); } catch (e) { toast(e.message, 'err'); } };
+/* ---------- master home: two choices ---------- */
+function mhome() {
+  $('#title').textContent = '';
+  const draw = () => {
+    const p = S.period, r = wRep(), pf = pendingCount('fsc'), pw = pendingCount('weekly');
+    const tag = (c) => (c.all ? `<span class="tag now">${c.all} belum diupload</span>` : '');
+    main.innerHTML = `<div class="hero"><p>Selamat datang,</p><h2>Master</h2><p style="margin-top:8px">Pilih laporan yang mau dikelola</p></div>
+      <div class="sect" style="margin-top:6px">Pilih laporan</div>
+      <button class="mod" id="mf"><span class="ico" style="background:var(--grad)">${ic('clip', 28)}</span><div><b>FSC Checklist ${tag(pf)}</b><span class="s">${p ? esc(p.label) + ' · Week ' + p.activeWeek + ' aktif' : 'Belum ada periode aktif · tekan untuk membuat'}</span></div><span class="go">${ic('chev')}</span></button>
+      <button class="mod" id="mw"><span class="ico" style="background:linear-gradient(135deg,#f59e0b,#ef4444)">${ic('wrench', 28)}</span><div><b>Weekly Deck &amp; Engine Report ${tag(pw)}</b><span class="s">${r ? 'No. ' + r.no + ' · Sabtu ' + esc(r.dateText) : 'Belum ada laporan aktif · tekan untuk membuat'}</span></div><span class="go">${ic('chev')}</span></button>`;
+    $('#mf').onclick = () => go('master');
+    $('#mw').onclick = async () => { try { await busy('Memuat…', wRefresh); go('wk'); } catch (e) { toast(e.message, 'err'); } };
   };
+  draw();
+  (async () => {                                               // bring the two status lines up to date (once per visit)
+    try { S.period = (await api('state')).period; } catch {}
+    try { await wRefresh(); } catch {}
+    if (cur().view === 'mhome') draw();
+  })();
 }
 
 if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost')) navigator.serviceWorker.register('sw.js').catch(() => {});
