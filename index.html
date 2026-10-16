@@ -264,7 +264,8 @@ async function outDel(id) { OUT = OUT.filter((o) => o.id !== id); try { await id
 async function outAdd(o) {
   const pid = S.period ? S.period.periodId : '';
   // answers and captions: only the latest value per target matters
-  const same = (x) => x.type === o.type && ((o.type === 'answer' && x.item === o.item) || (o.type === 'caption' && x.item === o.item && x.slot === o.slot));
+  const same = (x) => x.type === o.type && ((o.type === 'answer' && x.item === o.item) || (o.type === 'caption' && x.item === o.item && x.slot === o.slot) ||
+    (o.type === 'wday' && x.periodId === o.periodId && x.section === o.section && x.day === o.day));      // only the latest text of a day matters
   for (const x of OUT.filter(same)) await outDel(x.id);
   const full = { id:(o.type === 'photo' || o.type === 'wphoto' ? 'L' : 'Q') + Date.now().toString(36) + Math.random().toString(36).slice(2, 7), t:Date.now(), periodId:pid, officer:S.officer, ...o };
   OUT.push(full); await outPut(full);
@@ -1036,7 +1037,7 @@ const wPid = () => (wRep() ? 'W' + wRep().reportId : '');
 const wOps = (type) => OUT.filter((o) => o.type === type && o.periodId === wPid());
 function wDayOf(sec, day) {
   const b = S.w.days.find((x) => x.section === sec && x.day === day) || { text:'', na:false };
-  const op = OUT.find((o) => o.type === 'wday' && o.periodId === wPid() && o.section === sec && o.day === day);
+  const op = OUT.filter((o) => o.type === 'wday' && o.periodId === wPid() && o.section === sec && o.day === day).sort((x, y) => y.t - x.t)[0];   // newest wins
   return op ? { text:op.text, na:op.na } : { text:b.text, na:b.na };
 }
 function wPhotosOf(sec, day) {
