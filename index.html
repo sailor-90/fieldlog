@@ -1083,11 +1083,12 @@ function wk(t) {
       <button class="btn ghost" id="wcr" style="margin-bottom:10px">Daftar kru &amp; tanda tangan</button>
       <button class="btn ghost" id="whd" style="margin-bottom:10px">${ic('edit')} Ubah nomor / tanggal laporan</button>
       <button class="btn" id="wgen">${ic('pdf')} Ambil file (Word + PDF)</button><div id="wout" style="margin-top:14px"></div>
-      <button class="btn ghost" id="wfin" style="margin-top:14px">${ic('check')} Selesai (laporan sudah dikirim)</button>` : ''}`;
+      <button class="btn ghost" id="wfin" style="margin-top:14px">${ic('check')} Selesai (laporan sudah dikirim)</button>` : `<div class="sect">Cek hasil</div>
+      <button class="tile" id="wpdf" style="width:100%;min-height:0;flex-direction:row;align-items:center"><span class="c" style="background:linear-gradient(135deg,#7c3aed,#a78bfa)">${ic('pdf')}</span><div><b>Create PDF</b><small>Seluruh laporan dari data di cloud (upload dulu). Bisa 2–4 menit.</small></div></button>`}`;
   $$('.row-i').forEach((x) => x.onclick = () => go('wday', { sec:x.dataset.s, day:+x.dataset.d }));
   if ($('#upl')) $('#upl').onclick = () => syncOut(false, 'weekly');
   if ($('#que')) $('#que').onclick = () => queueSheet('weekly');
-  if (!master) return;
+  if (!master) { $('#wpdf').onclick = wDownloadPdf; return; }
   $('#wsg').onclick = () => wSigners();
   $('#wcr').onclick = () => go('wcrew');
   $('#whd').onclick = () => wHeaderEdit();
@@ -1111,6 +1112,26 @@ function wk(t) {
 }
 
 const RANKS = ['Master', '2nd Master', 'Chief Officer', '2nd Officer', '3rd Officer', 'Chief Engineer', '1st Engineer', '2nd Engineer', '3rd Engineer'];
+async function wDownloadPdf() {
+  const pw = pendingCount('weekly');
+  if (pw.all) {
+    if (!(await ask({ title:'Masih ada yang di HP', msg:`${pw.photos} foto dan ${pw.other} perubahan Weekly belum di cloud. PDF dibuat dari data cloud, jadi upload dulu.`, ok:'Upload dulu' }))) return;
+    if (!(await syncOut(false, 'weekly'))) {
+      if (!(await ask({ title:'Sebagian belum terkirim', msg:'Ada isian Weekly di HP yang gagal diupload. Buat PDF dari data yang sudah ada di cloud saja? (Isian yang gagal tidak ikut.)', ok:'Buat PDF sekarang' }))) return;
+    }
+  }
+  try {
+    await busy('Membuat PDF… (bisa 2–4 menit, jangan tutup aplikasi)', async () => {
+      const d = await api('wPreview');
+      const bytes = Uint8Array.from(atob(d.pdf), (c) => c.charCodeAt(0));
+      const url = URL.createObjectURL(new Blob([bytes], { type:'application/pdf' }));
+      const a = document.createElement('a'); a.href = url; a.download = `Weekly No. ${wRep().no} - ${S.officer}.pdf`;
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 60000);
+    });
+    toast('PDF dibuat dan diunduh', 'ok');
+  } catch (e) { toast(e.message, 'err'); }
+}
 function crewOptions(sel) {                                  // every active person: the signature follows the NAME, not the rank
   const crew = (S.w.crew || []).filter((c) => c.active || c.crewId === sel).sort((a, b) => (a.fullName || a.shortName).localeCompare(b.fullName || b.shortName));
   return '<option value="">- pilih nama -</option>' + crew.map((c) => `<option value="${esc(c.crewId)}" ${c.crewId === sel ? 'selected' : ''}>${esc(c.fullName || c.shortName)}${c.hasSig ? '' : ' (tanpa ttd)'}</option>`).join('');
