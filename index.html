@@ -413,7 +413,7 @@ function render() {
   const t = cur();
   $('#back').classList.toggle('hide', stack.length < 2);
   $('#logout').classList.toggle('hide', !['home', 'mhome'].includes(t.view));
-  ({ login, who, home, soon, fsc, week, item, master, wk, wday, wcrew, mhome }[t.view])(t);
+  ({ login, who, home, soon, fsc, week, item, master, wk, wday, wcrew, mhome, arch, archp }[t.view])(t);
 }
 
 /* ---------- photo pipeline: keep resolution (capped), stamp date/time inside the photo, cut JPEG quality ---------- */
@@ -746,11 +746,13 @@ function fsc() {
       <button class="tile" id="a-save"><span class="c" style="background:linear-gradient(135deg,#1668e3,#4d90f5)">${ic('save')}</span><div><b>Save</b><small>${S.lastSaved ? 'Terakhir dicek ' + esc(S.lastSaved) : 'Cek apa yang masih kurang'}</small></div></button>
       <button class="tile" id="a-load"><span class="c" style="background:linear-gradient(135deg,#0ea5a4,#2cc5c2)">${ic('load')}</span><div><b>Load</b><small>Muat data terbaru (perubahan di HP tetap ada)</small></div></button>
       <button class="tile" id="a-pdf" style="grid-column:1/-1;min-height:0"><span class="c" style="background:linear-gradient(135deg,#7c3aed,#a78bfa)">${ic('pdf')}</span><div><b>Create PDF</b><small>PDF dari data di cloud (upload dulu)</small></div></button>
+      <button class="tile" id="a-arc" style="grid-column:1/-1;min-height:0"><span class="c" style="background:linear-gradient(135deg,#f59e0b,#fbbf24)">${ic('clip')}</span><div><b>Arsip</b><small>File Word dan PDF tiap week yang sudah dikirim</small></div></button>
     </div>`;
   $$('.wk').forEach((b) => b.onclick = () => { if (!b.classList.contains('locked')) go('week', { w:+b.dataset.w }); else toast('Week ini belum dibuka oleh master.'); });
   if ($('#upl')) $('#upl').onclick = () => syncOut(false, 'fsc');
   if ($('#que')) $('#que').onclick = () => queueSheet('fsc');
   $('#auto').onchange = (e) => { store.set('auto', e.target.checked ? '1' : '0'); if (e.target.checked && OUT.length && navigator.onLine) syncOut(true); };
+  $('#a-arc').onclick = () => go('arch', { mod:'fsc' });
   $('#a-save').onclick = checkAll; $('#a-load').onclick = loadAll; $('#a-pdf').onclick = downloadPdf;
 }
 
@@ -953,11 +955,13 @@ async function master(t) {
       ${d.items.filter((i) => i.photos || i.answer).map((i) => `<tr><td><b>${esc(i.item)}</b></td><td>${esc(i.officers.join(', '))}</td><td>${i.answer ? `<span class="chip ${i.answer}">${esc(i.answer)}</span>` : '-'}${i.remarks ? '<br><span class="mute small">' + esc(i.remarks) + '</span>' : ''}</td><td>${i.photos}/${i.slots}</td></tr>`).join('') || '<tr><td colspan="4" class="mute">Belum ada isian</td></tr>'}</table>
       <p class="mute small">Terjawab: ${d.items.filter((i) => i.answer).length} dari ${d.items.length} item${logged.length ? ' · week selesai: ' + logged.join(', ') : ''}</p></div>
     <button class="btn" id="gen">${ic('pdf')} Ambil file (Word + PDF)</button><div id="out" style="margin-top:14px"></div>
+    <button class="btn ghost" id="arc" style="margin-top:12px">${ic('clip')} Arsip (file week yang sudah dikirim)</button>
     <div class="sect">Alur periode</div>
     <button class="btn ghost" id="fin" style="margin-bottom:10px">${ic('check')} Finish Week ${p.activeWeek}</button>
     ${logged.length ? `<button class="btn ghost" id="undo" style="margin-bottom:10px">Batalkan Finish Week ${logged[logged.length - 1]}</button>` : ''}
     <button class="btn ghost" id="end" style="color:var(--bad)">End periode</button>`;
   $('#edit').onclick = () => masterEdit(p);
+  $('#arc').onclick = () => go('arch', { mod:'fsc' });
   $('#gen').onclick = async () => {
     try {
       const g = await busy('Menyusun file… (bisa 1–3 menit)', () => api('generate'));
@@ -1018,7 +1022,14 @@ function masterFinish(p, last) {
   $('#n', m).onclick = () => m.remove();
   $('#y', m).onclick = async () => {
     try {
-      const r = await busy('Memproses…', () => api('finishWeek', { date: last ? '' : $('#fd', m).value }));
+      const date = last ? '' : $('#fd', m).value;
+      let r;
+      try { r = await busy('Memproses…', () => api('finishWeek', { date })); }
+      catch (e) {
+        if (!/^NOFILE/.test(e.message)) throw e;
+        if (!(await ask({ title:'Belum ada file Week ' + p.activeWeek, msg:e.message.replace(/^NOFILE:\s*/, '') + '\n\nKalau tetap lanjut, week ini masuk arsip tanpa file.', ok:'Lanjut tanpa file', danger:true }))) return;
+        r = await busy('Memproses…', () => api('finishWeek', { date, noFile:true }));
+      }
       m.remove(); toast(r.last ? 'Week 4 selesai. Tekan End periode.' : `Week ${r.period.activeWeek} dibuka`, 'ok'); master();
     } catch (e) { toast(e.message, 'err'); }
   };
@@ -1080,14 +1091,17 @@ function wk(t) {
     ${master ? `<div class="sect">Master</div>
       <div class="card"><div style="display:flex;justify-content:space-between;align-items:center"><b>Tanda tangan di laporan</b><button class="btn ghost sm" id="wsg" style="width:auto">${ic('edit')} Atur</button></div>
         <table style="margin-top:6px">${sgRows}</table></div>
+      <button class="btn ghost" id="warc" style="margin-bottom:10px">${ic('clip')} Arsip (laporan yang sudah dikirim)</button>
       <button class="btn ghost" id="wcr" style="margin-bottom:10px">Daftar kru &amp; tanda tangan</button>
       <button class="btn ghost" id="whd" style="margin-bottom:10px">${ic('edit')} Ubah nomor / tanggal laporan</button>
       <button class="btn" id="wgen">${ic('pdf')} Ambil file (Word + PDF)</button><div id="wout" style="margin-top:14px"></div>
       <button class="btn ghost" id="wfin" style="margin-top:14px">${ic('check')} Selesai (laporan sudah dikirim)</button>` : `<div class="sect">Cek hasil</div>
+      <button class="tile" id="warc" style="width:100%;min-height:0;flex-direction:row;align-items:center;margin-bottom:10px"><span class="c" style="background:linear-gradient(135deg,#f59e0b,#fbbf24)">${ic('clip')}</span><div><b>Arsip</b><small>Laporan mingguan yang sudah dikirim</small></div></button>
       <button class="tile" id="wpdf" style="width:100%;min-height:0;flex-direction:row;align-items:center"><span class="c" style="background:linear-gradient(135deg,#7c3aed,#a78bfa)">${ic('pdf')}</span><div><b>Create PDF</b><small>Seluruh laporan dari data di cloud (upload dulu). Bisa 2–4 menit.</small></div></button>`}`;
   $$('.row-i').forEach((x) => x.onclick = () => go('wday', { sec:x.dataset.s, day:+x.dataset.d }));
   if ($('#upl')) $('#upl').onclick = () => syncOut(false, 'weekly');
   if ($('#que')) $('#que').onclick = () => queueSheet('weekly');
+  $('#warc').onclick = () => go('arch', { mod:'weekly' });
   if (!master) { $('#wpdf').onclick = wDownloadPdf; return; }
   $('#wsg').onclick = () => wSigners();
   $('#wcr').onclick = () => go('wcrew');
@@ -1107,7 +1121,15 @@ function wk(t) {
   };
   $('#wfin').onclick = async () => {
     if (!(await ask({ title:'Selesai?', msg:`Laporan No. ${r.no} ditutup. Pastikan file sudah diambil dan dikirim ke kantor. Setelah itu buat laporan minggu berikutnya.`, ok:'Ya, selesai' }))) return;
-    try { await busy('Menutup…', () => api('wFinish')); await wRefresh(); toast('Laporan ditutup', 'ok'); render(); } catch (e) { toast(e.message, 'err'); }
+    try {
+      try { await busy('Menutup…', () => api('wFinish')); }
+      catch (e) {
+        if (!/^NOFILE/.test(e.message)) throw e;
+        if (!(await ask({ title:'Belum ada file laporan', msg:e.message.replace(/^NOFILE:\s*/, '') + '\n\nKalau tetap lanjut, laporan ini masuk arsip tanpa file.', ok:'Lanjut tanpa file', danger:true }))) return;
+        await busy('Menutup…', () => api('wFinish', { noFile:true }));
+      }
+      await wRefresh(); toast('Laporan ditutup', 'ok'); render();
+    } catch (e) { toast(e.message, 'err'); }
   };
 }
 
@@ -1332,6 +1354,50 @@ function wCrewEdit(c) {
 }
 
 /* ---------- master home: two choices ---------- */
+/* ---------- archive: files of weeks / reports that were finished and sent to the office ---------- */
+async function archiveDownload(action, params, fallback) {
+  try {
+    await busy('Mengambil file dari Drive…', async () => {
+      const d = await api(action, params);
+      const bytes = Uint8Array.from(atob(d.data), (c) => c.charCodeAt(0));
+      const url = URL.createObjectURL(new Blob([bytes], { type:d.mime || 'application/octet-stream' }));
+      const a = document.createElement('a'); a.href = url; a.download = d.name || fallback;
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 60000);
+    });
+    toast('File terunduh', 'ok');
+  } catch (e) { toast(e.message, 'err'); }
+}
+const fileBtns = (has, attrs) => ['pdf', 'docx'].map((k) => has[k] ? `<button class="btn ${k === 'pdf' ? '' : 'ghost'} sm" ${attrs} data-k="${k}" style="flex:1">${k === 'pdf' ? ic('pdf') + ' PDF' : 'Word'} <span class="small" style="opacity:.75">${mb(has[k])}</span></button>` : '').join('');
+async function arch(t) {
+  $('#title').textContent = 'Arsip';
+  main.innerHTML = '<div class="card mute" style="text-align:center">Memuat…</div>';
+  try {
+    if (t.mod === 'weekly') {
+      const d = await api('wArchiveList');
+      main.innerHTML = `<p class="mute small" style="margin:0 2px 10px">Laporan Weekly yang sudah ditutup (Selesai). Tekan PDF atau Word untuk mengunduh.</p>` + (d.reports.map((r) => `<div class="card"><b>No. ${r.no}</b> <span class="mute">· Sabtu ${esc(r.dateText)}</span>
+        <div style="display:flex;gap:10px;margin-top:10px">${r.pdf || r.docx ? fileBtns(r, `data-r="${esc(r.reportId)}"`) : '<span class="mute small">Belum ada file untuk laporan ini</span>'}</div></div>`).join('') || '<div class="card mute" style="text-align:center">Belum ada laporan yang selesai.</div>');
+      $$('[data-r][data-k]').forEach((b) => b.onclick = () => archiveDownload('wArchiveFile', { reportId:b.dataset.r, kind:b.dataset.k }, 'Weekly.' + b.dataset.k));
+      return;
+    }
+    const d = await api('archiveList');
+    main.innerHTML = `<p class="mute small" style="margin:0 2px 10px">Periode FSC yang sudah punya week selesai (Finish). Pilih periode untuk melihat file tiap week.</p>` + (d.periods.map((p) => {
+      const n = p.weeks.filter((w) => w.finished).length;
+      return `<button class="mod" data-p="${esc(p.periodId)}"><span class="ico" style="background:var(--grad)">${ic('clip', 28)}</span><div><b>FSC ${esc(p.label)}</b><span class="s">${esc(p.code)} · ${n} dari 4 week selesai${p.status === 'ACTIVE' ? ' · berjalan' : ' · ditutup'}</span></div><span class="go">${ic('chev')}</span></button>`;
+    }).join('') || '<div class="card mute" style="text-align:center">Belum ada week yang selesai.</div>');
+    S.arch = d.periods;
+    $$('[data-p]').forEach((b) => b.onclick = () => go('archp', { pid:b.dataset.p }));
+  } catch (e) { main.innerHTML = ''; toast(e.message, 'err'); }
+}
+function archp(t) {
+  const p = (S.arch || []).find((x) => x.periodId === t.pid);
+  if (!p) { main.innerHTML = '<div class="card mute" style="text-align:center">Data arsip tidak ditemukan. Kembali dan buka lagi.</div>'; return; }
+  $('#title').textContent = 'FSC ' + p.label;
+  main.innerHTML = p.weeks.map((w) => `<div class="card"><div style="display:flex;justify-content:space-between;align-items:center"><b>Week ${w.week}</b>${w.finished ? `<span class="chip Yes">Selesai${w.finishedAt ? ' · ' + esc(dateText(String(w.finishedAt).slice(0, 10))) : ''}</span>` : '<span class="chip">Belum selesai</span>'}</div>
+    ${w.finished ? `<div style="display:flex;gap:10px;margin-top:10px">${w.pdf || w.docx ? fileBtns(w, `data-w="${w.week}"`) : '<span class="mute small">Belum ada file untuk week ini</span>'}</div>` : ''}</div>`).join('');
+  $$('[data-w][data-k]').forEach((b) => b.onclick = () => archiveDownload('archiveFile', { periodId:p.periodId, week:+b.dataset.w, kind:b.dataset.k }, `FSC Week ${b.dataset.w}.${b.dataset.k}`));
+}
+
 function mhome() {
   $('#title').textContent = '';
   const draw = () => {
