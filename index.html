@@ -1043,7 +1043,7 @@ const W_SIDE = () => CFG.W_SIDE || 900, W_QUAL = () => CFG.W_QUALITY || 0.75;   
 const wJpeg = (canvas) => toJpeg(scaleTo(canvas, W_SIDE()), W_QUAL());
 async function wRefresh() {
   const d = await api('wState');
-  S.w = { report:d.report, days:d.days || [], photos:d.photos || [], canEdit:d.canEdit, next:d.next, crew:d.crew || [], defaultSigners:d.defaultSigners || {} };
+  S.w = { report:d.report, lastClosed:d.lastClosed || null, days:d.days || [], photos:d.photos || [], canEdit:d.canEdit, next:d.next, crew:d.crew || [], defaultSigners:d.defaultSigners || {} };
   try { idb.setMeta('wstate', S.w); } catch {}
 }
 const wRep = () => (S.w && S.w.report) || null;
@@ -1179,18 +1179,24 @@ function wireSigners(root, prefix) {                         // choosing a name 
 }
 const readSigners = (root, prefix) => [0, 1, 2, 3].map((i) => ({ rank:$('#' + prefix + 'r' + i, root).value, crewId:$('#' + prefix + 'n' + i, root).value }));
 function wCreate() {
-  const n = S.w.next, ds = S.w.defaultSigners;
+  const n = S.w.next, ds = S.w.defaultSigners, lc = S.w.lastClosed;
   main.innerHTML = `<div class="hero"><p>Weekly Deck &amp; Engine Report</p><h2>Create new</h2><p style="margin-top:6px">Isi nomor, tanggal Sabtu, dan penandatangan.</p></div>
     <div class="card"><label style="margin-top:0">Nomor laporan</label><input class="f" id="wn" type="number" inputmode="numeric" value="${n.no}">
       <label>Tanggal laporan (hari Sabtu)</label><input class="f" id="wd" type="date" value="${esc(n.date)}">
       <div class="sect" style="margin:16px 0 0">Penandatangan (jabatan dan nama bebas dipilih)</div>${signerRows('s', ds)}
       <button class="btn" id="wc" style="margin-top:16px">Create new</button></div>
+    ${lc ? `<button class="btn ghost" id="wre" style="margin-top:10px">Buka lagi laporan No. ${lc.no} (batalkan Selesai)</button>` : ''}
     <button class="btn ghost" id="wcr2" style="margin-top:10px">Daftar kru &amp; tanda tangan</button>`;
   $('#wcr2').onclick = () => go('wcrew');
+  if (lc) $('#wre').onclick = async () => {
+    if (!(await ask({ title:`Buka lagi No. ${lc.no}?`, msg:`Laporan No. ${lc.no} (Sabtu ${lc.dateText}) kembali aktif dan bisa diedit. File PDF/Word yang lama tetap ada; setelah selesai edit, tekan Ambil file lagi lalu Selesai. Hanya bisa selama laporan baru belum dibuat.`, ok:'Ya, buka lagi' }))) return;
+    try { await busy('Membuka…', () => api('wReopen')); await wRefresh(); toast(`No. ${lc.no} dibuka lagi`, 'ok'); render(); } catch (e) { toast(e.message, 'err'); }
+  };
   wireSigners(main, 's');
   $('#wc').onclick = async () => {
     const date = $('#wd').value;
     if (date && new Date(date + 'T12:00:00Z').getUTCDay() !== 6 && !(await ask({ title:'Bukan hari Sabtu', msg:'Tanggal itu bukan hari Sabtu. Lanjutkan?', ok:'Lanjut' }))) return;
+    if (lc && !(await ask({ title:'Sudah dikirim ke office?', msg:`Laporan No. ${lc.no} sudah dikirim ke office? Setelah laporan baru dibuat, No. ${lc.no} tidak bisa dibuka lagi dari aplikasi.`, ok:'Sudah dikirim, buat baru' }))) return;
     try {
       const signers = readSigners(main, 's');
       await busy('Membuat laporan…', () => api('wCreate', { no:+$('#wn').value, date, signers }));
