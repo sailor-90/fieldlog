@@ -211,7 +211,7 @@
 <div id="toast"></div>
 <div id="busy" class="hide"><div><div class="spin"></div><span id="busyt">Memproses…</span></div></div>
 <input type="file" id="cam" accept="image/*" capture="environment" class="hide">
-<input type="file" id="gal" accept="image/*" class="hide">
+<input type="file" id="gal" accept="image/*" multiple class="hide">
 
 <script src="config.js?v=20261015a"></script>
 <script>
@@ -881,7 +881,32 @@ async function handleFile(f, fromCamera) {
   render();
 }
 $('#cam').onchange = (e) => { handleFile(e.target.files[0], true); e.target.value = ''; };
-$('#gal').onchange = (e) => { handleFile(e.target.files[0], false); e.target.value = ''; };
+$('#gal').onchange = (e) => {
+  const fs = [...e.target.files]; e.target.value = '';
+  if (fs.length > 1 && pending && pending.w) handleMany(fs); else handleFile(fs[0], false);
+};
+/* weekly gallery, several photos at once: saved straight to the queue (no preview per photo; the edit button is still there afterwards) */
+async function handleMany(fs) {
+  const pw = pending; if (!pw) return;
+  const room = W_MAX - wPhotosOf(pw.section, pw.day).length;
+  const take = fs.slice(0, Math.max(room, 0));
+  let ok = 0, bad = 0;
+  try {
+    await busy('Menyimpan foto…', async () => {
+      for (const f of take) {
+        try {
+          const wj = await wJpeg(await loadCanvas(f));
+          await outAdd({ type:'wphoto', periodId:wPid(), section:pw.section, day:pw.day, b64:wj.b64, photoTime:new Date(f.lastModified || Date.now()).toISOString() });
+          ok++;
+        } catch (e) { bad++; }
+      }
+    });
+    if (!storageAsked && navigator.storage && navigator.storage.persist) { storageAsked = true; navigator.storage.persist().catch(() => {}); }
+    const skipped = fs.length - take.length;
+    toast(`${ok} foto tersimpan di HP` + (bad ? `, ${bad} gagal dibaca` : '') + (skipped ? `, ${skipped} dilewati (maks ${W_MAX} per hari)` : ''), bad || skipped ? 'err' : 'ok');
+  } catch (e) { toast('Gagal: ' + e.message, 'err'); }
+  render();
+}
 
 /* ---------- FSC actions ---------- */
 /** Save = check (works offline): lists what the officer still lacks and how much is not yet in the cloud. */
