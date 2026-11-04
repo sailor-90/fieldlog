@@ -409,7 +409,7 @@ function go(view, params = {}) { stack.push({ view, ...params }); history.pushSt
 function reset(view, params = {}) { stack = [{ view, ...params }]; history.replaceState({ n:1 }, ''); render(); window.scrollTo(0, 0); }
 // Opened as the separate "Dokumen Kapal" card of the TITANIA menu (?mod=docs): the documents screen is the home screen.
 const DOCS_ONLY = new URLSearchParams(location.search).get('mod') === 'docs';
-if (DOCS_ONLY) document.title = 'Dokumen Kapal';
+if (DOCS_ONLY) { document.title = 'Dokumen Kapal'; document.getElementById('title').textContent = 'Dokumen Kapal'; }   // header shows during auto-login
 const goHome = (role) => DOCS_ONLY ? reset('docs', { fid:'' }) : reset(role === 'master' ? 'mhome' : 'home');
 window.addEventListener('popstate', () => { if (stack.length > 1) stack.pop(); render(); });
 $('#back').innerHTML = ic('back'); $('#logout').innerHTML = ic('out');
@@ -1414,6 +1414,16 @@ function dKind(name, mime) {
 }
 function dexpCached() { if (!S.dexp) { try { S.dexp = JSON.parse(store.get('dexp') || 'null'); } catch {} } return S.dexp; }
 async function dexpLoad() { S.dexp = await api('dExpiry'); store.set('dexp', JSON.stringify(S.dexp)); return S.dexp; }
+/** Expiry items grouped per Excel file: [{ name, list }], each list by date, groups by their most urgent item. */
+const dexpName = (f) => String(f || '').replace(/\.[a-z0-9]+$/i, '').replace(/^\s*\d+\s*\.\s*/, '').replace(/^\s*TITANIA\s*-\s*/i, '').replace(/\s+\d{1,2}\s+[A-Z]{3,9}\s+\d{2,4}\s*$/i, '').replace(/\s+/g, ' ').trim() || 'Lainnya';
+const DEXP_CREW = /CREW DOCUMENT CHECK ?LIST|C-02/i;
+function dexpGroups(items) {
+  const m = new Map();
+  items.forEach((i) => { const crew = DEXP_CREW.test(i.fileName), k = crew ? 'crew' : i.fileId || i.fileName; if (!m.has(k)) m.set(k, { name:crew ? 'CREW CERTIFICATE CHECK LIST' : dexpName(i.fileName), list:[] }); m.get(k).list.push(i); });   // every crew member has his own C-02 file: one group for all
+  const g = [...m.values()];
+  g.forEach((x) => x.list.sort((a, b) => a.days - b.days || String(a.label).localeCompare(String(b.label))));
+  return g.sort((a, b) => a.list[0].days - b.list[0].days || a.name.localeCompare(b.name));
+}
 function dexpCount() {
   const x = dexpCached(); if (!x) return null;
   return { red:x.items.filter((i) => i.days <= 30).length, orange:x.items.filter((i) => i.days > 30).length };
@@ -1736,9 +1746,9 @@ function dexp(t) {
   const draw = () => {
     const x = dexpCached();
     if (!x) { main.innerHTML = '<div class="card mute" style="text-align:center">Memuat…</div>'; return; }
-    const groups = [['Sudah lewat / hari ini', (i) => i.days <= 0, 'dred'], ['Dalam 30 hari', (i) => i.days > 0 && i.days <= 30, 'dred'], ['Dalam 31–90 hari', (i) => i.days > 30, 'dorg']];
+    const groups = dexpGroups(x.items);   // one section per Excel file, most urgent file first, items by date inside
     main.innerHTML = `<p class="mute small" style="margin:0 2px 10px">Dibaca otomatis dari kolom EXPIRED/EXPIRY di file Excel (medical list, sertifikat, crew checklist). Pengingat juga muncul di Google Calendar "TITANIA – Expired": 3 bulan, 1 bulan, dan pada hari expired.</p>`
-      + groups.map(([g, f, cls]) => { const list = x.items.filter(f); return list.length ? `<div class="sect">${g} · ${list.length}</div>` + list.map((i) => `<button class="row-i dr" data-id="${esc(i.fileId)}" data-n="${esc(i.fileName)}"><span class="tx dt"><b>${esc(i.label)}</b><small class="mute" style="display:block">${i.context ? esc(i.context) + ' · ' : ''}${esc(i.fileName)}</small></span><span style="text-align:right"><span class="chip ${cls}">${dLeft(i.days)}</span><small class="mute" style="display:block;margin-top:3px">${esc(dDate(i.expiry))}</small></span></button>`).join('') : ''; }).join('')
+      + groups.map(({ name, list }) => `<div class="sect">${esc(name)} · ${list.length}</div>` + list.map((i, _, __, cls = i.days <= 30 ? 'dred' : 'dorg') => `<button class="row-i dr" data-id="${esc(i.fileId)}" data-n="${esc(i.fileName)}"><span class="tx dt"><b>${esc(i.label)}</b>${i.context || DEXP_CREW.test(i.fileName) ? `<small class="mute" style="display:block">${esc(i.context || dexpName(i.fileName).replace(DEXP_CREW, '').replace(/[\s-]+$/, ''))}</small>` : ''}</span><span style="text-align:right"><span class="chip ${cls}">${dLeft(i.days)}</span><small class="mute" style="display:block;margin-top:3px">${esc(dDate(i.expiry))}</small></span></button>`).join('')).join('')
       + (x.items.length ? '' : '<div class="card" style="text-align:center"><b style="color:var(--ok)">Aman.</b><p class="mute" style="margin:6px 0 0">Tidak ada yang habis dalam 3 bulan.</p></div>')
       + (x.items.length ? `<div class="two" style="margin-top:14px"><button class="btn ghost" id="exl">Excel</button><button class="btn" id="epdf">${ic('pdf')} PDF</button></div>` : '')
       + `<button class="btn ghost" id="rs" style="margin-top:10px">Periksa ulang sekarang</button><p class="mute small" style="text-align:center">Terakhir diperiksa: ${x.lastScan ? esc(new Date(x.lastScan).toLocaleString('id-ID', { day:'numeric', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit' })) : 'belum pernah'} · otomatis tiap pagi</p>`;
