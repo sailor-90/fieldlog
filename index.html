@@ -96,6 +96,12 @@
   .chip.No { background:var(--soft); background:color-mix(in srgb,var(--bad) 16%,transparent); color:var(--bad); }
   .chip.NA { background:var(--soft); background:color-mix(in srgb,var(--mute) 18%,transparent); color:var(--mute); }
   .chip.todo { background:var(--soft); background:color-mix(in srgb,var(--warn) 18%,transparent); color:var(--warn); }
+  .tag.dred { background:color-mix(in srgb,var(--bad) 16%,transparent); color:var(--bad); } .tag.dorg { background:color-mix(in srgb,var(--warn) 18%,transparent); color:var(--warn); }
+  .chip.dred { background:color-mix(in srgb,var(--bad) 16%,transparent); color:var(--bad); } .chip.dorg { background:color-mix(in srgb,var(--warn) 18%,transparent); color:var(--warn); }
+  .row-i .no.dk { color:#fff; font-size:11px; letter-spacing:.02em; } .row-i .no.dfold { color:var(--brand2); } .row-i .tx b { font-weight:650; word-break:break-word; }
+  .crumbs { font-size:13px; color:var(--mute); margin:4px 2px 0; line-height:1.9; } .crumbs button { border:0; background:none; color:var(--brand); font:inherit; font-weight:650; padding:0; cursor:pointer; }
+  .mod.dexpbtn.hot { border-color:var(--bad); }
+  .row-i .tx.dt { display:block; -webkit-line-clamp:unset; overflow:visible; text-align:left; } .row-i.dr { text-align:left; width:100%; font:inherit; color:inherit; }
   .grp { font-size:13px; font-weight:700; color:var(--mute); margin:18px 4px 8px; }
   .filters { display:flex; gap:8px; margin:2px 0 6px; overflow:auto; }
   .filters button { border:1px solid var(--line); background:var(--card); border-radius:99px; padding:7px 14px; font-size:13px; font-weight:650; color:var(--mute); white-space:nowrap; cursor:pointer; }
@@ -413,7 +419,7 @@ function render() {
   const t = cur();
   $('#back').classList.toggle('hide', stack.length < 2);
   $('#logout').classList.toggle('hide', !['home', 'mhome'].includes(t.view));
-  ({ login, who, home, soon, fsc, week, item, master, wk, wday, wcrew, mhome, arch, archp }[t.view])(t);
+  ({ login, who, home, soon, fsc, week, item, master, wk, wday, wcrew, mhome, arch, archp, docs, dexp, dcrew, dchg }[t.view])(t);
 }
 
 /* ---------- photo pipeline: keep resolution (capped), stamp date/time inside the photo, cut JPEG quality ---------- */
@@ -704,6 +710,7 @@ function home() {
     <div class="sect" style="margin-top:6px">Pilih laporan</div>
     <button class="mod" id="m1"><span class="ico" style="background:var(--grad)">${ic('clip', 28)}</span><div><b>FSC Checklist</b><span class="s">${p ? esc(p.title) + ' · ' + esc(p.code) : 'Menunggu master membuat periode baru'}</span></div><span class="go">${ic('chev')}</span></button>
     <button class="mod" id="m2"><span class="ico" style="background:linear-gradient(135deg,#f59e0b,#ef4444)">${ic('wrench', 28)}</span><div><b>Weekly Deck & Engine Report</b><span class="s">Laporan perawatan deck &amp; mesin · dikirim tiap Sabtu</span></div><span class="go">${ic('chev')}</span></button>
+    ${docsModBtn()}
     <p class="mute small" style="text-align:center;margin-top:22px">Pengaturan foto: ${CFG.MAX_SIDE} px · kualitas ${CFG.JPEG_QUALITY}</p>`;
   $('#m1').onclick = async () => {
     try { await busy('Memuat…', refresh); } catch (e) { if (!S.items.length) { toast('Tidak ada koneksi dan belum ada data tersimpan.', 'err'); return; } toast('Offline: memakai data terakhir di HP', 'ok'); }
@@ -720,6 +727,7 @@ function home() {
     go('wk');
   };
   $('#chg').onclick = () => { store.set('officer', ''); reset('who'); };
+  docsModWire();
 }
 
 function soon() {
@@ -1384,6 +1392,366 @@ function wCrewEdit(c) {
   };
 }
 
+/* ---------- Dokumen: ship documents in Drive (through the backend, no Google login) + expiry warnings ---------- */
+const D_MON = ['Jan','Feb','Mar','Apr','Mei','Jun','Jul','Agu','Sep','Okt','Nov','Des'];
+const dDate = (s) => { const [y, m, d] = String(s).slice(0, 10).split('-'); return y && m ? `${+d} ${D_MON[m - 1]} ${y}` : ''; };
+const dSize = (n) => n >= 1048576 ? mb(n) : Math.max(1, Math.round(n / 1024)) + ' KB';
+const dLeft = (d) => d < 0 ? `lewat ${-d} hari` : d === 0 ? 'hari ini' : `${d} hari lagi`;
+function dKind(name, mime) {
+  const e = (String(name).match(/\.([a-z0-9]+)$/i) || [, ''])[1].toLowerCase();
+  if (/sheet|excel/.test(mime) || ['xls', 'xlsx', 'csv'].includes(e)) return ['XLS', '#15a34a'];
+  if (/word|document/.test(mime) || ['doc', 'docx'].includes(e)) return ['DOC', '#1668e3'];
+  if (/pdf/.test(mime) || e === 'pdf') return ['PDF', '#dc2626'];
+  if (/image/.test(mime)) return ['IMG', '#7c3aed'];
+  return [(e || 'FILE').toUpperCase().slice(0, 4), '#66758b'];
+}
+function dexpCached() { if (!S.dexp) { try { S.dexp = JSON.parse(store.get('dexp') || 'null'); } catch {} } return S.dexp; }
+async function dexpLoad() { S.dexp = await api('dExpiry'); store.set('dexp', JSON.stringify(S.dexp)); return S.dexp; }
+function dexpCount() {
+  const x = dexpCached(); if (!x) return null;
+  return { red:x.items.filter((i) => i.days <= 30).length, orange:x.items.filter((i) => i.days > 30).length };
+}
+const dexpTags = () => { const c = dexpCount(); return c ? (c.red ? `<span class="tag dred">${c.red} ≤ 30 hari</span>` : '') + (c.orange ? `<span class="tag dorg">${c.orange} ≤ 90 hari</span>` : '') : ''; };
+const docsModBtn = () => `<button class="mod" id="md"><span class="ico" style="background:linear-gradient(135deg,#0ea5a4,#15a34a)">${ic('clip', 28)}</span><div><b>Dokumen Kapal ${dexpTags()}</b><span class="s">Crew list, muster list, sertifikat, medical list, agent docs</span></div><span class="go">${ic('chev')}</span></button>`;
+function docsModWire() {
+  $('#md').onclick = () => go('docs', { fid:'' });
+  if (navigator.onLine) dexpLoad().then(() => { const b = $('#md b'); if (b) b.innerHTML = 'Dokumen Kapal ' + dexpTags(); }).catch(() => {});
+}
+function pickFile() {
+  return new Promise((resolve) => {
+    const i = document.createElement('input'); i.type = 'file';
+    i.onchange = () => resolve(i.files[0] || null); i.click();
+  });
+}
+const fileB64 = (f) => new Promise((ok, no) => { const r = new FileReader(); r.onload = () => ok(String(r.result).split(',')[1] || ''); r.onerror = () => no(new Error('File tidak terbaca')); r.readAsDataURL(f); });
+async function docsUpload(params, f) {
+  if (!navigator.onLine) return toast('Butuh sinyal internet untuk mengunggah dokumen.', 'err');
+  if (f.size > 15 * 1048576) return toast('File terlalu besar (maks. 15 MB).', 'err');
+  try {
+    const d = await busy('Mengunggah ' + f.name + '…', async () => api('dUpload', { ...params, name:f.name, mime:f.type || '', data:await fileB64(f) }));
+    toast(params.replaceId ? 'Versi baru tersimpan. Versi lama ada di folder _lama.' : 'File tersimpan', 'ok');
+    if (d.scan && d.scan.errors && d.scan.errors.length) toast('Cek expired: ' + d.scan.errors[0], 'err');
+    if (d.scan) dexpLoad().catch(() => {});
+    return d;
+  } catch (e) { toast(e.message, 'err'); }
+}
+
+/* ---------- Dokumen export, same flow as the Passage Plan app: Excel / PDF -> "… ready" -> Save / Share, Download ---------- */
+const b64Blob = (b64, type) => new Blob([Uint8Array.from(atob(b64), (c) => c.charCodeAt(0))], { type:type || 'application/octet-stream' });
+/** Result window: one file ("PDF ready") or several ("13 PDF files ready", each downloadable + Save / Share all). */
+function dResult(list, kind) {
+  const urls = list.map((r) => URL.createObjectURL(r.blob));
+  const files = typeof File === 'function' ? list.map((r) => new File([r.blob], r.name, { type:r.blob.type })) : [];
+  const canShare = !!(files.length && navigator.canShare && navigator.canShare({ files }));
+  const one = list.length === 1;
+  const m = sheet(`<h3>${one ? esc(kind) + ' siap' : list.length + ' file ' + esc(kind) + ' siap'}</h3>
+    ${one ? `<p class="mute small" style="word-break:break-all">${esc(list[0].name)} · ${dSize(list[0].blob.size)}</p>`
+      : `<div style="display:grid;gap:8px;margin:6px 0 14px;max-height:46vh;overflow:auto">${list.map((r, i) => `<a class="btn ghost sm" href="${urls[i]}" download="${esc(r.name)}" style="justify-content:flex-start;text-align:left;word-break:break-all;height:auto;padding:8px 12px">${ic('load')} ${esc(r.name)}</a>`).join('')}</div>`}
+    <div style="display:flex;gap:8px;flex-wrap:wrap">${canShare ? `<button class="btn" id="sh" style="flex:2">${ic('send')} ${one ? 'Save / Share' : 'Save / Share semua'}</button>` : ''}
+    ${one ? `<a class="btn ghost" id="dl" href="${urls[0]}" download="${esc(list[0].name)}" style="flex:1;text-decoration:none">Download</a>` : ''}<button class="btn ghost" id="c" style="flex:1">Tutup</button></div>
+    <p class="mute small" style="margin:12px 0 0">Untuk print: Save / Share lalu pilih Print, atau buka file lalu tekan Print.</p>`);
+  $('#c', m).onclick = () => { m.remove(); setTimeout(() => urls.forEach((u) => URL.revokeObjectURL(u)), 60000); };
+  if ($('#sh', m)) $('#sh', m).onclick = async () => { try { await navigator.share({ files }); } catch (e) { if (e.name !== 'AbortError') toast('Gagal membagikan: ' + e.message, 'err'); } };
+}
+/** Paper direction for spreadsheets (null = cancelled). */
+function askOrient() {
+  return new Promise((ok) => {
+    const m = sheet(`<h3>Arah kertas</h3><p class="mute small">Untuk file Excel. Lebar tabel disesuaikan otomatis dengan kertas A4.</p><div class="two"><button class="btn ghost" id="pt">Tegak</button><button class="btn ghost" id="ls">Mendatar</button></div><button class="btn ghost" id="c" style="margin-top:10px">Batal</button>`);
+    $('#pt', m).onclick = () => { m.remove(); ok(false); }; $('#ls', m).onclick = () => { m.remove(); ok(true); }; $('#c', m).onclick = () => { m.remove(); ok(null); };
+  });
+}
+/** Fetch files one by one (Apps Script answers one at a time); failures are reported, the rest still comes back. */
+async function dFetchAll(xs, kind, landscape) {
+  const out = [], bad = [];
+  await busy('Menyiapkan…', async () => {
+    for (let i = 0; i < xs.length; i++) {
+      $('#busyt').textContent = `${kind} ${i + 1} dari ${xs.length}…`;
+      try {
+        const d = kind === 'PDF' ? await api('dPdf', { id:xs[i].id, landscape }) : await api('dFile', { id:xs[i].id });
+        out.push({ name:d.name, blob:b64Blob(d.data, d.mime) });
+      } catch (e) { bad.push(xs[i].name + ': ' + e.message); }
+    }
+  });
+  if (bad.length) toast(`${bad.length} file gagal: ${bad[0]}`, 'err');
+  return out;
+}
+/** Folder button "PDF" / "Excel": tick the files (choice remembered per folder), like "Choose PDF documents". */
+function dPick(kind, d, fid) {
+  const key = 'dsel:' + kind + ':' + fid;
+  let sel = null; try { sel = JSON.parse(store.get(key) || 'null'); } catch {}
+  const isXls = (x) => dKind(x.name, x.mime)[0] === 'XLS';
+  const m = sheet(`<h3>${kind === 'PDF' ? 'Pilih dokumen untuk PDF' : 'Pilih file asli (Excel / Word)'}</h3>
+    <div style="display:flex;gap:8px;margin:4px 0 8px"><button class="btn ghost sm" id="all" style="width:auto">Pilih semua</button><button class="btn ghost sm" id="none" style="width:auto">Kosongkan</button></div>
+    <div style="display:grid;gap:10px;margin:0 0 12px;max-height:44vh;overflow:auto">${d.files.map((x) => `<label style="display:flex;gap:10px;align-items:flex-start;font-size:14px"><input type="checkbox" data-id="${esc(x.id)}" ${!sel || sel.includes(x.name) ? 'checked' : ''} style="width:20px;height:20px;flex:none;margin-top:1px"><span style="word-break:break-word">${esc(x.name)}</span></label>`).join('')}</div>
+    ${kind === 'PDF' && d.files.some(isXls) ? `<div class="two" style="margin-bottom:10px"><button class="btn ghost sm" data-o="0">Tegak</button><button class="btn ghost sm" data-o="1">Mendatar</button></div>` : ''}
+    <div style="display:flex;gap:8px"><button class="btn" id="go" style="flex:2">${kind === 'PDF' ? 'Buat PDF' : 'Ambil file'}</button><button class="btn ghost" id="c" style="flex:1">Tutup</button></div>`);
+  let land = store.get('dland') === '1';
+  const paint = () => $$('[data-o]', m).forEach((b) => { const on = (b.dataset.o === '1') === land; b.classList.toggle('ghost', !on); });
+  $$('[data-o]', m).forEach((b) => b.onclick = () => { land = b.dataset.o === '1'; store.set('dland', land ? '1' : '0'); paint(); }); paint();
+  $('#all', m).onclick = () => $$('input[data-id]', m).forEach((i) => { i.checked = true; });
+  $('#none', m).onclick = () => $$('input[data-id]', m).forEach((i) => { i.checked = false; });
+  $('#c', m).onclick = () => m.remove();
+  $('#go', m).onclick = async () => {
+    const ids = $$('input[data-id]', m).filter((i) => i.checked).map((i) => i.dataset.id), xs = d.files.filter((x) => ids.includes(x.id));
+    if (!xs.length) return toast('Centang minimal satu file');
+    if (!navigator.onLine) return toast('Butuh sinyal internet.', 'err');
+    store.set(key, JSON.stringify(xs.map((x) => x.name)));
+    m.remove();
+    const out = await dFetchAll(xs, kind, land);
+    if (out.length) dResult(out, kind === 'PDF' ? 'PDF' : 'File asli');
+  };
+}
+/** One file: PDF (asks paper direction for Excel) or the original file. */
+async function dOne(x, kind) {
+  if (!navigator.onLine) return toast('Butuh sinyal internet.', 'err');
+  let land = false;
+  if (kind === 'PDF' && dKind(x.name, x.mime)[0] === 'XLS') { land = await askOrient(); if (land === null) return; }
+  const out = await dFetchAll([x], kind, land);
+  if (out.length) dResult(out, kind === 'PDF' ? 'PDF' : 'File asli');
+}
+/** "Akan Expired" list as Excel or PDF, made by the backend (same table, colours, A4). */
+async function dexpExport(kind) {
+  if (!navigator.onLine) return toast('Butuh sinyal internet.', 'err');
+  try {
+    const d = await busy(`Membuat ${kind === 'pdf' ? 'PDF' : 'Excel'}…`, () => api('dExpiryExport', { kind }));
+    dResult([{ name:d.name, blob:b64Blob(d.data, d.mime) }], kind === 'pdf' ? 'PDF' : 'Excel');
+  } catch (e) { toast(e.message, 'err'); }
+}
+
+/* ---------- Crew change: register (MASTER = everybody on TITANIA, on board / off) -> new C-03, IMO list, MASTER, muster ---------- */
+const ymdToday = () => { const d = new Date(), p = (n) => String(n).padStart(2, '0'); return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`; };
+async function kLoad() { const d = await api('kList'); S.kcrew = d.crew; return d.crew; }
+/** New files made by a crew change: same Excel / PDF result flow as the rest of Dokumen. */
+function kFilesSheet(files, title) {
+  const m = sheet(`<h3>${esc(title)}</h3><div style="display:grid;gap:6px;margin:6px 0 14px">${files.map((f) => `<div class="small" style="word-break:break-all">✓ ${esc(f.name)}</div>`).join('')}</div>
+    <p class="mute small" style="margin:0 0 10px">File lama dipindah ke folder _lama.</p>
+    <div class="two"><button class="btn" id="p">${ic('pdf')} PDF semua</button><button class="btn ghost" id="x">File asli</button></div><button class="btn ghost" id="c" style="margin-top:10px">Tutup</button>`);
+  $('#c', m).onclick = () => m.remove();
+  $('#p', m).onclick = async () => { m.remove(); const out = await dFetchAll(files, 'PDF', true); if (out.length) dResult(out, 'PDF'); };
+  $('#x', m).onclick = async () => { m.remove(); const out = await dFetchAll(files, 'Excel', false); if (out.length) dResult(out, 'File asli'); };
+}
+const kRow = (p) => `<button class="row-i dr" data-k="${esc(p.id)}"><span class="no">${esc(String(p.order))}</span><span class="tx dt"><b>${esc(p.name)}</b><small class="mute" style="display:block">${esc(p.rank)} · ${esc(p.short)}${p.signOn ? ' · sign on ' + esc(dDate(p.signOn)) : ''}</small></span></button>`;
+
+async function dcrew(t) {
+  $('#title').textContent = 'Daftar Kru';
+  const draw = () => {
+    const c = S.kcrew || [], on = c.filter((p) => p.onboard), off = c.filter((p) => !p.onboard);
+    main.innerHTML = `<div class="two"><button class="btn" id="chg">${ic('send')} Crew change</button><button class="btn ghost" id="add">Kru baru</button></div>
+      <p class="mute small" style="margin:10px 2px 0">Daftar ini = C-03 MASTER (semua kru TITANIA). Crew change membuat C-03, IMO crew list, C-03 MASTER dan muster list yang baru.</p>
+      <div class="sect">Di kapal · ${on.length}</div>${on.map(kRow).join('') || '<div class="card mute">Belum ada.</div>'}
+      <div class="sect">Off · ${off.length}</div>${off.map(kRow).join('') || '<div class="card mute">Tidak ada.</div>'}`;
+    $('#chg').onclick = () => go('dchg');
+    $('#add').onclick = kAddFlow;
+    $$('[data-k]').forEach((b) => b.onclick = () => kSheet(c.find((p) => p.id === b.dataset.k)));
+  };
+  const kSheet = (p) => {
+    const exp = (l, v) => v ? `<div class="small">${l}: <b>${esc(dDate(v))}</b></div>` : '';
+    const m = sheet(`<h3>${esc(p.name)}</h3><p class="mute small">${esc(p.rank)} · nama di muster: <b>${esc(p.short)}</b> · ${p.onboard ? 'di kapal' : 'off'}</p>
+      ${exp('Paspor expired', p.passportExp)}${exp('Buku pelaut expired', p.sbExp)}${exp('Work permit expired', p.wpExp)}
+      <div style="display:grid;gap:10px;margin-top:14px">${S.role === 'master' ? `<button class="btn ghost" id="e">${ic('edit')} Ubah data kru</button>${p.hasC02 ? `<button class="btn ghost" id="v">${ic('clip')} Cocokkan dengan C-02</button>` : ''}${p.onboard ? '' : `<button class="btn ghost" id="r" style="color:var(--bad)">${ic('trash')} Keluar dari TITANIA</button>`}` : ''}<button class="btn ghost" id="c">Tutup</button></div>`);
+    $('#c', m).onclick = () => m.remove();
+    const saved = (d) => { S.kcrew = d.crew; S.dcache = {}; draw(); if (d.files && d.files.length) kFilesSheet(d.files, 'Data kru diperbarui'); else toast('Tersimpan', 'ok'); };
+    if ($('#e', m)) $('#e', m).onclick = async () => {
+      m.remove();
+      let full; try { full = (await busy('Memuat data…', () => api('kGet', { id:p.id }))).crew; } catch (e) { return toast(e.message, 'err'); }
+      const F = [['name', 'Nama lengkap'], ['short', 'Nama di muster'], ['rank', 'Rank di C-03'], ['rankImo', 'Rank di IMO list'], ['nat', 'Nationality'], ['sex', 'Sex (M/F)'],
+        ['dob', 'Tanggal lahir', 'date'], ['pob', 'Tempat lahir'], ['passport', 'No. paspor'], ['passportExp', 'Paspor expired', 'date'], ['sb', 'No. buku pelaut'],
+        ['sbExp', 'Buku pelaut expired', 'date'], ['wp', 'No. work permit'], ['wpExp', 'Work permit expired', 'date'], ['signOn', 'Sign on', 'date']];
+      const f = sheet(`<h3>Ubah data kru</h3><p class="mute small">${esc(full.name)}. Perubahan data membuat C-03 MASTER baru${full.onboard === 'Y' ? ', C-03 di kapal dan IMO crew list baru' : ''}.</p>
+        <div style="display:grid;gap:8px;max-height:52vh;overflow:auto">${F.map(([k, l, ty]) => `<label class="small">${l}<input class="f" data-f="${k}" ${ty ? 'type="date"' : ''} value="${esc(full[k] || '')}"></label>`).join('')}</div>
+        <div style="display:flex;gap:8px;margin-top:12px"><button class="btn" id="y" style="flex:2">Simpan</button><button class="btn ghost" id="n" style="flex:1">Batal</button></div>`);
+      $('#n', f).onclick = () => f.remove();
+      $('#y', f).onclick = async () => {
+        const fields = {}; $$('[data-f]', f).forEach((i) => { if (i.value.trim() !== String(full[i.dataset.f] || '')) fields[i.dataset.f] = i.value.trim(); });
+        f.remove(); if (!Object.keys(fields).length) return toast('Tidak ada yang berubah');
+        try { saved(await busy('Menyimpan dan membuat file baru… (bisa 1 menit)', () => api('kEdit', { id:p.id, fields }))); } catch (e) { toast(e.message, 'err'); }
+      };
+    };
+    if ($('#v', m)) $('#v', m).onclick = async () => {
+      m.remove();
+      let d; try { d = await busy('Membaca C-02…', () => api('kFromC02', { id:p.id })); } catch (e) { return toast(e.message, 'err'); }
+      if (!d.diff.length) return toast('Data sudah sama dengan C-02', 'ok');
+      const show = (k, v) => /Exp$|^dob$/.test(k) ? dDate(v) || v || '-' : v || '-';
+      const f = sheet(`<h3>Beda dengan C-02</h3><p class="mute small">${esc(p.name)}. Centang yang mau diganti dengan data C-02.</p>
+        <div style="display:grid;gap:10px;max-height:50vh;overflow:auto">${d.diff.map((x) => `<label style="display:flex;gap:10px;align-items:flex-start" class="small"><input type="checkbox" data-k="${esc(x.k)}" checked style="width:20px;height:20px;flex:none"><span><b>${esc(x.label)}</b><br><span class="mute">Sekarang: ${esc(show(x.k, x.now))}</span><br>C-02: <b>${esc(show(x.k, x.c02))}</b></span></label>`).join('')}</div>
+        <div style="display:flex;gap:8px;margin-top:12px"><button class="btn" id="y" style="flex:2">Pakai data C-02</button><button class="btn ghost" id="n" style="flex:1">Batal</button></div>`);
+      $('#n', f).onclick = () => f.remove();
+      $('#y', f).onclick = async () => {
+        const fields = {}; $$('input[data-k]', f).filter((i) => i.checked).forEach((i) => { fields[i.dataset.k] = d.diff.find((x) => x.k === i.dataset.k).c02; });
+        f.remove(); if (!Object.keys(fields).length) return;
+        try { saved(await busy('Menyimpan dan membuat file baru… (bisa 1 menit)', () => api('kEdit', { id:p.id, fields }))); } catch (e) { toast(e.message, 'err'); }
+      };
+    };
+    if ($('#r', m)) $('#r', m).onclick = async () => {
+      m.remove();
+      if (!(await ask({ title:'Keluar dari TITANIA?', msg:`${p.name} dihapus dari C-03 MASTER. C-02 checklist-nya dipindah ke _lama.`, ok:'Keluarkan', danger:true }))) return;
+      try { const d = await busy('Membuat C-03 MASTER baru…', () => api('kRemove', { id:p.id })); S.kcrew = d.crew; draw(); kFilesSheet(d.files, 'C-03 MASTER baru'); } catch (e) { toast(e.message, 'err'); }
+    };
+  };
+  if (S.kcrew) draw(); else main.innerHTML = '<div class="card mute" style="text-align:center">Memuat daftar kru… (pertama kali bisa 1 menit)</div>';
+  try { await kLoad(); if (cur() === t) draw(); } catch (e) { if (!S.kcrew) main.innerHTML = '<div class="card mute" style="text-align:center">Tidak bisa memuat. Periksa sinyal lalu coba lagi.</div>'; toast(e.message, 'err'); }
+}
+
+function dchg(t) {
+  $('#title').textContent = 'Crew change';
+  const c = S.kcrew || [], on = c.filter((p) => p.onboard), off = c.filter((p) => !p.onboard);
+  const st = t.st || (t.st = { date:ymdToday(), off:[], on:[], pairs:{} });
+  const box = (p, list) => `<label class="row-i dr" style="cursor:pointer"><input type="checkbox" data-l="${list}" data-id="${esc(p.id)}" ${st[list].includes(p.id) ? 'checked' : ''} style="width:20px;height:20px;flex:none"><span class="tx dt"><b>${esc(p.name)}</b><small class="mute" style="display:block">${esc(p.rank)}</small></span></label>`;
+  const draw = () => {
+    const opts = (id) => { const cands = st.on.map((k) => c.find((p) => p.id === k)).concat(on.filter((p) => !st.off.includes(p.id)));
+      return `<option value="">(dikosongkan)</option>` + cands.map((p) => `<option value="${esc(p.id)}" ${st.pairs[id] === p.id ? 'selected' : ''}>${esc(p.short)} – ${esc(p.rank)}${st.on.includes(p.id) ? ' (naik)' : ''}</option>`).join(''); };
+    main.innerHTML = `<div class="card"><b>Tanggal crew change</b><input class="f" type="date" id="dt" value="${esc(st.date)}" style="margin-top:8px"></div>
+      <div class="sect">Turun (sign off)</div>${on.map((p) => box(p, 'off')).join('')}
+      <div class="sect">Naik (sign on) · dari kru Off</div>${off.map((p) => box(p, 'on')).join('') || '<div class="card mute">Tidak ada kru off. Tambahkan lewat "Kru baru".</div>'}
+      ${st.off.length ? `<div class="sect">Tugas muster yang turun diambil oleh</div>` + st.off.map((id) => { const p = c.find((x) => x.id === id); return `<div class="card" style="padding:12px"><b>${esc(p.short)}</b> <span class="mute small">${esc(p.rank)}</span><select class="f" data-pair="${esc(id)}" style="margin-top:8px">${opts(id)}</select></div>`; }).join('') : ''}
+      <button class="btn" id="pv" style="margin-top:14px">Lihat perubahan</button>`;
+    $('#dt').onchange = (e) => { st.date = e.target.value; };
+    $$('input[data-l]').forEach((i) => i.onchange = () => {
+      const l = st[i.dataset.l], id = i.dataset.id;
+      if (i.checked) l.push(id); else l.splice(l.indexOf(id), 1);
+      const ok = (id) => st.on.includes(id) || on.some((p) => p.id === id && !st.off.includes(p.id));
+      st.off.forEach((o, k) => { if (!st.pairs[o] || !ok(st.pairs[o])) st.pairs[o] = st.on[k] || ''; });   // n-th off -> n-th on, unless chosen
+      Object.keys(st.pairs).forEach((o) => { if (!st.off.includes(o)) delete st.pairs[o]; });
+      draw();
+    });
+    $$('select[data-pair]').forEach((s) => s.onchange = () => { st.pairs[s.dataset.pair] = s.value; });
+    $('#pv').onclick = preview;
+  };
+  const preview = async () => {
+    if (!st.off.length && !st.on.length) return toast('Centang kru yang turun atau naik');
+    if (!st.date) return toast('Isi tanggal crew change');
+    if (!navigator.onLine) return toast('Butuh sinyal internet.', 'err');
+    let d; try { d = await busy('Memeriksa file kru…', () => api('kChange', { preview:true, off:st.off, on:st.on, pairs:st.pairs, date:st.date })); } catch (e) { return toast(e.message, 'err'); }
+    const m = sheet(`<h3>Periksa dulu</h3><div class="small" style="display:grid;gap:4px;margin-bottom:12px">${d.lines.map((l) => `<div>${esc(l)}</div>`).join('')}</div>
+      <div class="sect" style="margin-top:4px">File baru</div><div class="small" style="display:grid;gap:8px;margin-bottom:12px">${d.files.map((f) => `<div><b>${esc(f.to)}</b><br><span class="mute">${esc(f.what)} · menggantikan ${esc(f.from)}</span></div>`).join('')}</div>
+      <p class="mute small">Kru di kapal setelah crew change: ${d.onboard.length} orang.</p>
+      <div style="display:flex;gap:8px"><button class="btn" id="y" style="flex:2">Setuju, buat file</button><button class="btn ghost" id="n" style="flex:1">Batal</button></div>`);
+    $('#n', m).onclick = () => m.remove();
+    $('#y', m).onclick = async () => {
+      m.remove();
+      try {
+        const r = await busy('Membuat 4 file baru… (bisa 1–2 menit)', () => api('kChange', { off:st.off, on:st.on, pairs:st.pairs, date:st.date }));
+        S.kcrew = r.crew; S.dcache = {}; t.st = null;
+        history.back();
+        setTimeout(() => kFilesSheet(r.files, 'Crew change selesai'), 300);
+      } catch (e) { toast(e.message, 'err'); }
+    };
+  };
+  if (!S.kcrew) { main.innerHTML = '<div class="card mute">Buka Daftar Kru dulu.</div>'; return; }
+  draw();
+}
+
+/** New crew member: read their C-02 checklist (or type it in), check, save. */
+async function kAddFlow() {
+  const how = await new Promise((ok) => {
+    const m = sheet(`<h3>Kru baru</h3><p class="mute small">Kru yang belum pernah di TITANIA. Paling cepat: unggah C-02 crew document checklist dari manning agency.</p>
+      <div style="display:grid;gap:10px"><button class="btn" id="u">${ic('send')} Unggah C-02</button><button class="btn ghost" id="t">Isi manual</button><button class="btn ghost" id="c">Batal</button></div>`);
+    $('#u', m).onclick = () => { m.remove(); ok('u'); }; $('#t', m).onclick = () => { m.remove(); ok('t'); }; $('#c', m).onclick = () => { m.remove(); ok(null); };
+  });
+  if (!how) return;
+  let p = {}, file = null, data = '';
+  if (how === 'u') {
+    file = await pickFile(); if (!file) return;
+    if (!navigator.onLine) return toast('Butuh sinyal internet.', 'err');
+    try { data = await fileB64(file); p = (await busy('Membaca C-02…', () => api('kParseC02', { name:file.name, mime:file.type, data }))).crew; }
+    catch (e) { return toast(e.message, 'err'); }
+  }
+  const F = [['name', 'Nama lengkap'], ['short', 'Nama di muster (pendek)'], ['rank', 'Rank (seperti di C-03)'], ['nat', 'Nationality'], ['sex', 'Sex (M/F)'],
+    ['dob', 'Tanggal lahir', 'date'], ['pob', 'Tempat lahir'], ['passport', 'No. paspor'], ['passportExp', 'Paspor expired', 'date'],
+    ['sb', 'No. buku pelaut'], ['sbExp', 'Buku pelaut expired', 'date'], ['wp', 'No. work permit'], ['wpExp', 'Work permit expired', 'date']];
+  p.short = p.short || (p.name || '').split(' ')[0] || ''; p.nat = p.nat || 'INDONESIA'; p.sex = p.sex || 'M';
+  const m = sheet(`<h3>Cek data kru baru</h3><p class="mute small">${file ? 'Dibaca dari ' + esc(file.name) + '. ' : ''}Periksa dan koreksi sebelum disimpan.</p>
+    <div style="display:grid;gap:8px;max-height:52vh;overflow:auto">${F.map(([k, l, ty]) => `<label class="small">${l}<input class="f" data-f="${k}" ${ty ? 'type="date"' : ''} value="${esc(p[k] || '')}"></label>`).join('')}</div>
+    <div style="display:flex;gap:8px;margin-top:12px"><button class="btn" id="y" style="flex:2">Simpan ke daftar kru</button><button class="btn ghost" id="n" style="flex:1">Batal</button></div>`);
+  $('#n', m).onclick = () => m.remove();
+  $('#y', m).onclick = async () => {
+    const q = {}; $$('[data-f]', m).forEach((i) => { q[i.dataset.f] = i.value.trim(); });
+    if (!q.name || !q.rank) return toast('Nama dan rank wajib diisi');
+    m.remove();
+    try {
+      const d = await busy('Menyimpan dan membuat C-03 MASTER baru…', () => api('kAdd', { crew:q, data, fileName:file ? file.name : '', mime:file ? file.type : '' }));
+      S.kcrew = d.crew; S.dcache = {}; if (cur().view === 'dcrew') render();
+      kFilesSheet(d.files, 'Kru baru tersimpan');
+    } catch (e) { toast(e.message, 'err'); }
+  };
+}
+
+async function docs(t) {
+  const draw = (d) => {
+    S.dcache[t.fid] = d;
+    $('#title').textContent = d.folder.name;
+    const c = dexpCount(), top = !t.fid;
+    const crumbs = d.crumbs.length > 1 ? `<div class="crumbs">${d.crumbs.map((x, i) => i < d.crumbs.length - 1 ? `<button data-c="${i}">${esc(x.name)}</button> ›` : `<b>${esc(x.name)}</b>`).join(' ')}</div>` : '';
+    main.innerHTML = (top ? `<button class="mod dexpbtn ${c && c.red ? 'hot' : ''}" id="dx"><span class="ico" style="background:linear-gradient(135deg,#f59e0b,#dc2626)">${ic('lock', 26)}</span><div><b>Akan Expired ${dexpTags()}</b><span class="s">${c ? (c.red + c.orange ? 'Item yang habis dalam 3 bulan' : 'Tidak ada yang habis dalam 3 bulan') : 'Ketuk untuk memeriksa'}</span></div><span class="go">${ic('chev')}</span></button><button class="mod" id="dk"><span class="ico" style="background:linear-gradient(135deg,#1668e3,#7c3aed)">${ic('send', 26)}</span><div><b>Daftar Kru &amp; Crew change</b><span class="s">Sign on / sign off: C-03, IMO crew list, muster list dibuat otomatis</span></div><span class="go">${ic('chev')}</span></button>` : '') + crumbs
+      + (d.folders.length ? `<div class="sect">Folder</div>` + d.folders.map((x) => `<button class="row-i dr" data-f="${esc(x.id)}" data-n="${esc(x.name)}"><span class="no dfold">${ic('clip', 18)}</span><span class="tx"><b>${esc(x.name)}</b></span>${ic('chev')}</button>`).join('') : '')
+      + (d.files.length || !d.folders.length ? `<div class="sect" style="display:flex;align-items:center;justify-content:space-between"><span>File</span>${d.files.length ? `<span style="display:flex;gap:8px;text-transform:none;letter-spacing:0"><button class="btn ghost sm" id="dxl" style="width:auto">Excel</button><button class="btn sm" id="dpdf" style="width:auto">${ic('pdf')} PDF</button></span>` : ''}</div>` : '') + (d.files.map((x) => { const [k, col] = dKind(x.name, x.mime); return `<button class="row-i dr" data-id="${esc(x.id)}"><span class="no dk" style="background:${col}">${k}</span><span class="tx dt"><b>${esc(x.name)}</b><small class="mute" style="display:block">${dSize(x.size)} · ${esc(dDate(x.updated))}${x.by ? ' · oleh ' + esc(x.by) : ''}</small></span></button>`; }).join('') || (d.folders.length ? '' : '<div class="card mute" style="text-align:center">Folder ini masih kosong.</div>'))
+      + `<div class="two" style="margin-top:16px"><button class="btn" id="dadd">${ic('send')} Tambah file</button><button class="btn ghost" id="dmk">Folder baru</button></div>
+         <p class="mute small" style="text-align:center;margin-top:14px">Ketuk file untuk membuka, mengganti versi${S.role === 'master' ? ', atau menghapus' : ''}. File lama tidak hilang: disimpan di folder _lama.</p>`;
+    if ($('#dx')) $('#dx').onclick = () => go('dexp');
+    if ($('#dk')) $('#dk').onclick = () => go('dcrew');
+    $$('[data-c]').forEach((b) => b.onclick = () => go('docs', { fid:d.crumbs[+b.dataset.c].id }));
+    $$('[data-f]').forEach((b) => b.onclick = () => go('docs', { fid:b.dataset.f }));
+    $$('[data-id]').forEach((b) => b.onclick = () => fileSheet(d.files.find((x) => x.id === b.dataset.id)));
+    if ($('#dpdf')) $('#dpdf').onclick = () => dPick('PDF', d, t.fid);
+    if ($('#dxl')) $('#dxl').onclick = () => dPick('Excel', d, t.fid);
+    $('#dadd').onclick = async () => { const f = await pickFile(); if (!f) return; if (await docsUpload({ folderId:t.fid }, f)) load(); };
+    $('#dmk').onclick = async () => {
+      const n = await askText({ title:'Folder baru', msg:'Misalnya: AGENT DOCS 15 NOV 2026', value:'' }); if (!n || !n.trim()) return;
+      try { await busy('Membuat folder…', () => api('dMkdir', { folderId:t.fid, name:n.trim() })); toast('Folder dibuat', 'ok'); load(); } catch (e) { toast(e.message, 'err'); }
+    };
+  };
+  const fileSheet = (x) => {
+    const m = sheet(`<h3 style="word-break:break-word">${esc(x.name)}</h3><p class="mute small">${dSize(x.size)} · diubah ${esc(dDate(x.updated))}${x.by ? ' oleh ' + esc(x.by) : ''}</p>
+      <div style="display:grid;gap:10px"><div class="two"><button class="btn" id="p">${ic('pdf')} PDF</button><button class="btn ghost" id="o">${ic('load')} File asli</button></div><button class="btn ghost" id="r">${ic('edit')} Ganti dengan versi baru</button>
+      ${S.role === 'master' ? `<button class="btn ghost" id="x" style="color:var(--bad)">${ic('trash')} Hapus (pindah ke _lama)</button>` : ''}<button class="btn ghost" id="c">Tutup</button></div>`);
+    $('#c', m).onclick = () => m.remove();
+    $('#o', m).onclick = () => { m.remove(); dOne(x, 'Excel'); };
+    $('#p', m).onclick = () => { m.remove(); dOne(x, 'PDF'); };
+    $('#r', m).onclick = async () => {
+      m.remove();
+      if (!(await ask({ title:'Ganti versi?', msg:`Pilih file baru untuk menggantikan "${x.name}". File lama disimpan di folder _lama.`, ok:'Pilih file' }))) return;
+      const f = await pickFile(); if (!f) return;
+      if (await docsUpload({ replaceId:x.id }, f)) load();
+    };
+    if ($('#x', m)) $('#x', m).onclick = async () => {
+      m.remove();
+      if (!(await ask({ title:'Hapus file?', msg:`"${x.name}" dipindah ke folder _lama (tidak hilang).`, ok:'Hapus', danger:true }))) return;
+      try { await busy('Menghapus…', () => api('dDelete', { id:x.id })); toast('File dipindah ke _lama', 'ok'); load(); } catch (e) { toast(e.message, 'err'); }
+    };
+  };
+  const load = async () => {
+    try { const d = await api('dList', { folderId:t.fid }); if (cur() === t) draw(d); }
+    catch (e) { if (cur() === t && !S.dcache[t.fid]) main.innerHTML = '<div class="card mute" style="text-align:center">Tidak bisa memuat. Periksa sinyal lalu coba lagi.</div>'; toast(e.message, 'err'); }
+  };
+  S.dcache = S.dcache || {};
+  if (S.dcache[t.fid]) draw(S.dcache[t.fid]); else { $('#title').textContent = 'Dokumen'; main.innerHTML = '<div class="card mute" style="text-align:center">Memuat…</div>'; }
+  if (!t.fid && navigator.onLine) dexpLoad().then(() => { if (cur() === t && S.dcache['']) draw(S.dcache['']); }).catch(() => {});
+  load();
+}
+
+function dexp(t) {
+  $('#title').textContent = 'Akan Expired';
+  const draw = () => {
+    const x = dexpCached();
+    if (!x) { main.innerHTML = '<div class="card mute" style="text-align:center">Memuat…</div>'; return; }
+    const groups = [['Sudah lewat / hari ini', (i) => i.days <= 0, 'dred'], ['Dalam 30 hari', (i) => i.days > 0 && i.days <= 30, 'dred'], ['Dalam 31–90 hari', (i) => i.days > 30, 'dorg']];
+    main.innerHTML = `<p class="mute small" style="margin:0 2px 10px">Dibaca otomatis dari kolom EXPIRED/EXPIRY di file Excel (medical list, sertifikat, crew checklist). Pengingat juga muncul di Google Calendar "TITANIA – Expired": 3 bulan, 1 bulan, dan pada hari expired.</p>`
+      + groups.map(([g, f, cls]) => { const list = x.items.filter(f); return list.length ? `<div class="sect">${g} · ${list.length}</div>` + list.map((i) => `<button class="row-i dr" data-id="${esc(i.fileId)}" data-n="${esc(i.fileName)}"><span class="tx dt"><b>${esc(i.label)}</b><small class="mute" style="display:block">${i.context ? esc(i.context) + ' · ' : ''}${esc(i.fileName)}</small></span><span style="text-align:right"><span class="chip ${cls}">${dLeft(i.days)}</span><small class="mute" style="display:block;margin-top:3px">${esc(dDate(i.expiry))}</small></span></button>`).join('') : ''; }).join('')
+      + (x.items.length ? '' : '<div class="card" style="text-align:center"><b style="color:var(--ok)">Aman.</b><p class="mute" style="margin:6px 0 0">Tidak ada yang habis dalam 3 bulan.</p></div>')
+      + (x.items.length ? `<div class="two" style="margin-top:14px"><button class="btn ghost" id="exl">Excel</button><button class="btn" id="epdf">${ic('pdf')} PDF</button></div>` : '')
+      + `<button class="btn ghost" id="rs" style="margin-top:10px">Periksa ulang sekarang</button><p class="mute small" style="text-align:center">Terakhir diperiksa: ${x.lastScan ? esc(new Date(x.lastScan).toLocaleString('id-ID', { day:'numeric', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit' })) : 'belum pernah'} · otomatis tiap pagi</p>`;
+    $$('[data-id]').forEach((b) => b.onclick = () => archiveDownload('dFile', { id:b.dataset.id }, b.dataset.n));
+    if ($('#exl')) $('#exl').onclick = () => dexpExport('xlsx');
+    if ($('#epdf')) $('#epdf').onclick = () => dexpExport('pdf');
+    $('#rs').onclick = async () => {
+      try { const d = await busy('Memeriksa semua file… (bisa 1–2 menit)', () => api('dRescan')); S.dexp = { items:d.items, lastScan:d.lastScan, warnDays:d.warnDays }; store.set('dexp', JSON.stringify(S.dexp)); draw(); toast(d.scan && d.scan.errors && d.scan.errors.length ? 'Sebagian file gagal dibaca: ' + d.scan.errors[0] : 'Selesai diperiksa', d.scan && d.scan.errors && d.scan.errors.length ? 'err' : 'ok'); }
+      catch (e) { toast(e.message, 'err'); }
+    };
+  };
+  draw();
+  dexpLoad().then(() => { if (cur() === t) draw(); }).catch((e) => { if (!dexpCached()) main.innerHTML = '<div class="card mute" style="text-align:center">Tidak bisa memuat. Periksa sinyal lalu coba lagi.</div>'; toast(e.message, 'err'); });
+}
+
 /* ---------- master home: two choices ---------- */
 /* ---------- archive: files of weeks / reports that were finished and sent to the office ---------- */
 async function archiveDownload(action, params, fallback) {
@@ -1437,9 +1805,11 @@ function mhome() {
     main.innerHTML = `<div class="hero"><p>Selamat datang,</p><h2>Master</h2><p style="margin-top:8px">Pilih laporan yang mau dikelola</p></div>
       <div class="sect" style="margin-top:6px">Pilih laporan</div>
       <button class="mod" id="mf"><span class="ico" style="background:var(--grad)">${ic('clip', 28)}</span><div><b>FSC Checklist ${tag(pf)}</b><span class="s">${p ? esc(p.label) + ' · Week ' + p.activeWeek + ' aktif' : 'Belum ada periode aktif · tekan untuk membuat'}</span></div><span class="go">${ic('chev')}</span></button>
-      <button class="mod" id="mw"><span class="ico" style="background:linear-gradient(135deg,#f59e0b,#ef4444)">${ic('wrench', 28)}</span><div><b>Weekly Deck &amp; Engine Report ${tag(pw)}</b><span class="s">${r ? 'No. ' + r.no + ' · Sabtu ' + esc(r.dateText) : 'Belum ada laporan aktif · tekan untuk membuat'}</span></div><span class="go">${ic('chev')}</span></button>`;
+      <button class="mod" id="mw"><span class="ico" style="background:linear-gradient(135deg,#f59e0b,#ef4444)">${ic('wrench', 28)}</span><div><b>Weekly Deck &amp; Engine Report ${tag(pw)}</b><span class="s">${r ? 'No. ' + r.no + ' · Sabtu ' + esc(r.dateText) : 'Belum ada laporan aktif · tekan untuk membuat'}</span></div><span class="go">${ic('chev')}</span></button>
+      ${docsModBtn()}`;
     $('#mf').onclick = () => go('master');
     $('#mw').onclick = async () => { try { await busy('Memuat…', wRefresh); go('wk'); } catch (e) { toast(e.message, 'err'); } };
+    docsModWire();
   };
   draw();
   (async () => {                                               // bring the two status lines up to date (once per visit)
