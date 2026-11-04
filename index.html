@@ -404,7 +404,11 @@ function askText({ title, msg, value }) {
 
 /* ---------- navigation (works with the phone's back gesture/button) ---------- */
 function go(view, params = {}) { stack.push({ view, ...params }); history.pushState({ n:stack.length }, ''); render(); window.scrollTo(0, 0); }
-function reset(view) { stack = [{ view }]; history.replaceState({ n:1 }, ''); render(); window.scrollTo(0, 0); }
+function reset(view, params = {}) { stack = [{ view, ...params }]; history.replaceState({ n:1 }, ''); render(); window.scrollTo(0, 0); }
+// Opened as the separate "Dokumen Kapal" card of the TITANIA menu (?mod=docs): the documents screen is the home screen.
+const DOCS_ONLY = new URLSearchParams(location.search).get('mod') === 'docs';
+if (DOCS_ONLY) document.title = 'Dokumen Kapal';
+const goHome = (role) => DOCS_ONLY ? reset('docs', { fid:'' }) : reset(role === 'master' ? 'mhome' : 'home');
 window.addEventListener('popstate', () => { if (stack.length > 1) stack.pop(); render(); });
 $('#back').innerHTML = ic('back'); $('#logout').innerHTML = ic('out');
 $('#back').onclick = () => history.back();
@@ -418,7 +422,7 @@ const cur = () => stack[stack.length - 1];
 function render() {
   const t = cur();
   $('#back').classList.toggle('hide', stack.length < 2);
-  $('#logout').classList.toggle('hide', !['home', 'mhome'].includes(t.view));
+  $('#logout').classList.toggle('hide', !(['home', 'mhome'].includes(t.view) || (DOCS_ONLY && t.view === 'docs' && stack.length < 2)));
   ({ login, who, home, soon, fsc, week, item, master, wk, wday, wcrew, mhome, arch, archp, docs, dexp, dcrew, dchg }[t.view])(t);
 }
 
@@ -657,10 +661,12 @@ async function signIn(code, remember, auto) {
     store.set('code', remember ? code : '');
     if (d.period && d.period.shipName) store.set('ship', d.period.shipName);
     try { idb.setMeta('login', { code, role:d.role, officers:d.officers, period:d.period, forms:d.forms || [], defaults:d.defaults || {} }); } catch {}
-    if (d.role === 'master') return reset('mhome');
+    if (d.role === 'master') return goHome('master');
     const saved = store.get('officer');
     if (auto && saved && d.officers.includes(saved)) {          // remembered device: straight to the home screen
-      S.officer = saved; await busy('Memuat data…', refresh); return reset('home');
+      S.officer = saved;
+      if (DOCS_ONLY) return goHome('officer');                  // documents need no FSC/Weekly data
+      await busy('Memuat data…', refresh); return reset('home');
     }
     reset('who');
   } catch (e) {
@@ -672,7 +678,7 @@ async function signIn(code, remember, auto) {
           Object.assign(S, { role:'officer', officers:lg.officers, period:lg.period, forms:lg.forms, defaults:lg.defaults, officer:saved,
             items:st.items || [], photos:st.photos || [], answers:st.answers || {}, captions:st.captions || {} });
           S.answers0 = JSON.parse(JSON.stringify(S.answers)); S.captions0 = JSON.parse(JSON.stringify(S.captions)); applyOut();
-          reset('home'); return toast('Offline: memakai data terakhir di HP', 'ok');
+          goHome('officer'); return toast('Offline: memakai data terakhir di HP', 'ok');
         }
       } catch {}
     }
@@ -683,7 +689,7 @@ async function signIn(code, remember, auto) {
 
 function login() {
   $('#title').textContent = '';
-  main.innerHTML = `<div class="hero" style="margin-top:18px"><div class="logo">${ic('clip', 34)}</div><h2>Weekly Report</h2><p>Laporan mingguan kapal dengan foto, langsung tersinkron ke kantor.</p></div>
+  main.innerHTML = `<div class="hero" style="margin-top:18px"><div class="logo">${ic('clip', 34)}</div>${DOCS_ONLY ? '<h2>Dokumen Kapal</h2><p>Crew list, muster list, sertifikat, medical list dan agent docs, selalu versi terbaru.</p>' : '<h2>Weekly Report</h2><p>Laporan mingguan kapal dengan foto, langsung tersinkron ke kantor.</p>'}</div>
     <div class="card"><label style="margin-top:0">Kode akses</label><input class="f" id="code" type="password" autocomplete="off" autocapitalize="off" placeholder="Masukkan kode akses">
     <label style="display:flex;align-items:center;gap:10px;margin:14px 0 0;color:var(--ink);font-size:14px;font-weight:500"><input type="checkbox" id="rem" style="width:20px;height:20px"> Ingat di perangkat ini</label>
     <button class="btn" id="go" style="margin-top:16px">Masuk</button></div>`;
@@ -698,6 +704,7 @@ function who() {
     `<button class="mod" data-o="${esc(o)}" style="padding:14px 16px"><span class="ico" style="background:var(--grad);width:44px;height:44px;border-radius:14px;font-size:20px;font-weight:800">${esc(o[0] || '?')}</span><div><b>${esc(o)}</b>${o === last ? '<span class="s">terakhir dipakai</span>' : ''}</div><span class="go">${ic('chev')}</span></button>`).join('');
   $$('[data-o]').forEach((b) => b.onclick = async () => {
     S.officer = b.dataset.o; store.set('officer', S.officer);
+    if (DOCS_ONLY) return goHome('officer');
     try { await busy('Memuat data…', refresh); reset('home'); } catch (e) { toast(e.message, 'err'); }
   });
 }
@@ -710,7 +717,6 @@ function home() {
     <div class="sect" style="margin-top:6px">Pilih laporan</div>
     <button class="mod" id="m1"><span class="ico" style="background:var(--grad)">${ic('clip', 28)}</span><div><b>FSC Checklist</b><span class="s">${p ? esc(p.title) + ' · ' + esc(p.code) : 'Menunggu master membuat periode baru'}</span></div><span class="go">${ic('chev')}</span></button>
     <button class="mod" id="m2"><span class="ico" style="background:linear-gradient(135deg,#f59e0b,#ef4444)">${ic('wrench', 28)}</span><div><b>Weekly Deck & Engine Report</b><span class="s">Laporan perawatan deck &amp; mesin · dikirim tiap Sabtu</span></div><span class="go">${ic('chev')}</span></button>
-    ${docsModBtn()}
     <p class="mute small" style="text-align:center;margin-top:22px">Pengaturan foto: ${CFG.MAX_SIDE} px · kualitas ${CFG.JPEG_QUALITY}</p>`;
   $('#m1').onclick = async () => {
     try { await busy('Memuat…', refresh); } catch (e) { if (!S.items.length) { toast('Tidak ada koneksi dan belum ada data tersimpan.', 'err'); return; } toast('Offline: memakai data terakhir di HP', 'ok'); }
@@ -727,7 +733,6 @@ function home() {
     go('wk');
   };
   $('#chg').onclick = () => { store.set('officer', ''); reset('who'); };
-  docsModWire();
 }
 
 function soon() {
@@ -1412,11 +1417,6 @@ function dexpCount() {
   return { red:x.items.filter((i) => i.days <= 30).length, orange:x.items.filter((i) => i.days > 30).length };
 }
 const dexpTags = () => { const c = dexpCount(); return c ? (c.red ? `<span class="tag dred">${c.red} ≤ 30 hari</span>` : '') + (c.orange ? `<span class="tag dorg">${c.orange} ≤ 90 hari</span>` : '') : ''; };
-const docsModBtn = () => `<button class="mod" id="md"><span class="ico" style="background:linear-gradient(135deg,#0ea5a4,#15a34a)">${ic('clip', 28)}</span><div><b>Dokumen Kapal ${dexpTags()}</b><span class="s">Crew list, muster list, sertifikat, medical list, agent docs</span></div><span class="go">${ic('chev')}</span></button>`;
-function docsModWire() {
-  $('#md').onclick = () => go('docs', { fid:'' });
-  if (navigator.onLine) dexpLoad().then(() => { const b = $('#md b'); if (b) b.innerHTML = 'Dokumen Kapal ' + dexpTags(); }).catch(() => {});
-}
 function pickFile() {
   return new Promise((resolve) => {
     const i = document.createElement('input'); i.type = 'file';
@@ -1805,11 +1805,9 @@ function mhome() {
     main.innerHTML = `<div class="hero"><p>Selamat datang,</p><h2>Master</h2><p style="margin-top:8px">Pilih laporan yang mau dikelola</p></div>
       <div class="sect" style="margin-top:6px">Pilih laporan</div>
       <button class="mod" id="mf"><span class="ico" style="background:var(--grad)">${ic('clip', 28)}</span><div><b>FSC Checklist ${tag(pf)}</b><span class="s">${p ? esc(p.label) + ' · Week ' + p.activeWeek + ' aktif' : 'Belum ada periode aktif · tekan untuk membuat'}</span></div><span class="go">${ic('chev')}</span></button>
-      <button class="mod" id="mw"><span class="ico" style="background:linear-gradient(135deg,#f59e0b,#ef4444)">${ic('wrench', 28)}</span><div><b>Weekly Deck &amp; Engine Report ${tag(pw)}</b><span class="s">${r ? 'No. ' + r.no + ' · Sabtu ' + esc(r.dateText) : 'Belum ada laporan aktif · tekan untuk membuat'}</span></div><span class="go">${ic('chev')}</span></button>
-      ${docsModBtn()}`;
+      <button class="mod" id="mw"><span class="ico" style="background:linear-gradient(135deg,#f59e0b,#ef4444)">${ic('wrench', 28)}</span><div><b>Weekly Deck &amp; Engine Report ${tag(pw)}</b><span class="s">${r ? 'No. ' + r.no + ' · Sabtu ' + esc(r.dateText) : 'Belum ada laporan aktif · tekan untuk membuat'}</span></div><span class="go">${ic('chev')}</span></button>`;
     $('#mf').onclick = () => go('master');
     $('#mw').onclick = async () => { try { await busy('Memuat…', wRefresh); go('wk'); } catch (e) { toast(e.message, 'err'); } };
-    docsModWire();
   };
   draw();
   (async () => {                                               // bring the two status lines up to date (once per visit)
