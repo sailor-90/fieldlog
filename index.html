@@ -97,6 +97,9 @@
   .chip.NA { background:var(--soft); background:color-mix(in srgb,var(--mute) 18%,transparent); color:var(--mute); }
   .chip.todo { background:var(--soft); background:color-mix(in srgb,var(--warn) 18%,transparent); color:var(--warn); }
   .tag.dred { background:color-mix(in srgb,var(--bad) 16%,transparent); color:var(--bad); } .tag.dorg { background:color-mix(in srgb,var(--warn) 18%,transparent); color:var(--warn); }
+  .row-i .ck { width:24px; height:24px; border-radius:8px; border:2px solid var(--line); flex:none; display:grid; place-items:center; color:#fff; font-weight:900; font-size:14px; }
+  .row-i.on { border-color:var(--brand); } .row-i.on .ck { background:var(--brand); border-color:var(--brand); }
+  .selbar { position:sticky; bottom:calc(8px + var(--bot)); margin-top:10px; padding:8px; background:var(--card); border:1px solid var(--line); border-radius:18px; box-shadow:var(--shadow); }
   .chip.dred { background:color-mix(in srgb,var(--bad) 16%,transparent); color:var(--bad); } .chip.dorg { background:color-mix(in srgb,var(--warn) 18%,transparent); color:var(--warn); }
   .row-i .no.dk { color:#fff; font-size:11px; letter-spacing:.02em; } .row-i .no.dfold { color:var(--brand2); } .row-i .tx b { font-weight:650; word-break:break-word; }
   .crumbs { font-size:13px; color:var(--mute); margin:4px 2px 0; line-height:1.9; } .crumbs button { border:0; background:none; color:var(--brand); font:inherit; font-weight:650; padding:0; cursor:pointer; }
@@ -425,7 +428,7 @@ function render() {
   const t = cur();
   $('#back').classList.toggle('hide', stack.length < 2);
   $('#logout').classList.toggle('hide', !(['home', 'mhome'].includes(t.view) || (DOCS_ONLY && t.view === 'docs' && stack.length < 2)));
-  ({ login, who, home, soon, fsc, week, item, master, wk, wday, wcrew, mhome, arch, archp, docs, dexp, dcrew, dchg }[t.view])(t);
+  ({ login, who, home, soon, fsc, week, item, master, wk, wday, wcrew, mhome, arch, archp, docs, dexp, dfind, dcrew, dchg }[t.view])(t);
 }
 
 /* ---------- photo pipeline: keep resolution (capped), stamp date/time inside the photo, cut JPEG quality ---------- */
@@ -1424,6 +1427,96 @@ function dexpGroups(items) {
   g.forEach((x) => x.list.sort((a, b) => a.days - b.days || String(a.label).localeCompare(String(b.label))));
   return g.sort((a, b) => a.list[0].days - b.list[0].days || a.name.localeCompare(b.name));
 }
+/** One expiry row; in pick mode a tick box in front. */
+function dexpRow(i, picked) {
+  const cls = i.days <= 30 ? 'dred' : i.days <= 90 ? 'dorg' : '';
+  const who = i.context || (DEXP_CREW.test(i.fileName) ? dexpName(i.fileName).replace(DEXP_CREW, '').replace(/[\s-]+$/, '') : '');
+  return `<button class="row-i dr${picked && picked.has(i.key) ? ' on' : ''}" data-k="${esc(i.key)}">${picked ? `<span class="ck">${picked.has(i.key) ? '✓' : ''}</span>` : ''}<span class="tx dt"><b>${esc(i.label)}</b>${i.cert ? ' <span title="Ada sertifikat PDF">📄</span>' : ''}${who ? `<small class="mute" style="display:block">${esc(who)}</small>` : ''}</span><span style="text-align:right"><span class="chip ${cls}">${dLeft(i.days)}</span><small class="mute" style="display:block;margin-top:3px">${esc(dDate(i.expiry))}</small></span></button>`;
+}
+/** A photo of a certificate, ready to send: long side 1600 px, JPEG, base64 without the data: prefix. */
+function certPhoto(file) {
+  return new Promise((ok, bad) => {
+    const u = URL.createObjectURL(file), img = new Image();
+    img.onload = () => {
+      const k = Math.min(1, 1600 / Math.max(img.naturalWidth, img.naturalHeight)), c = document.createElement('canvas');
+      c.width = Math.round(img.naturalWidth * k); c.height = Math.round(img.naturalHeight * k);
+      const g = c.getContext('2d'); g.fillStyle = '#fff'; g.fillRect(0, 0, c.width, c.height); g.drawImage(img, 0, 0, c.width, c.height);
+      URL.revokeObjectURL(u); ok(c.toDataURL('image/jpeg', 0.72).split(',')[1]);
+    };
+    img.onerror = () => { URL.revokeObjectURL(u); bad(new Error('Foto tidak bisa dibaca')); };
+    img.src = u;
+  });
+}
+/** "📷 Foto sertifikat" button of one item inside a sheet; photos[key] collects the pictures (each page of the PDF). */
+function certPhotoBtn(m, i, photos, onChange) {
+  const b = $(`[data-ph="${CSS.escape(i.key)}"]`, m), x = $(`[data-px="${CSS.escape(i.key)}"]`, m);
+  const show = () => { const n = (photos[i.key] || []).length; b.textContent = n ? `📷 ${n} foto` : '📷 + Foto sertifikat'; x.style.display = n ? '' : 'none'; if (onChange) onChange(); };
+  b.onclick = () => {
+    const inp = document.createElement('input'); inp.type = 'file'; inp.accept = 'image/*'; inp.multiple = true;
+    inp.onchange = async () => {
+      try { for (const f of inp.files) (photos[i.key] = photos[i.key] || []).push(await certPhoto(f)); } catch (e) { toast(e.message, 'err'); }
+      show();
+    };
+    inp.click();
+  };
+  x.onclick = () => { delete photos[i.key]; show(); };
+  show();
+}
+const certRow = (i, extra) => `<div class="small" style="padding:8px 2px;border-bottom:1px solid var(--line)"><b>${esc(i.label)}</b><span class="mute"> · ${esc(dexpName(i.fileName))}${extra || ''}</span>
+  <div style="display:flex;gap:8px;margin-top:6px"><button class="btn ghost" style="padding:7px 12px;width:auto;font-size:13px" data-ph="${esc(i.key)}"></button><button class="btn ghost" style="padding:7px 12px;width:auto;font-size:13px;display:none" data-px="${esc(i.key)}">Hapus foto</button></div></div>`;
+const dexpDone = (d) => { S.dexp = { items:d.items, lastScan:d.lastScan, warnDays:d.warnDays }; store.set('dexp', JSON.stringify(S.dexp)); S.dexpAll = null; };
+
+/** Asks the new expiry date (and optional certificate photos per item), writes it into the Excel files, refreshes the list. */
+async function dexpSet(items) {
+  if (!items.length) return false;
+  const y = new Date(); y.setFullYear(y.getFullYear() + 1);
+  const photos = {};
+  const date = await new Promise((resolve) => {
+    const m = sheet(`<h3>Perbarui expired</h3><p class="mute small" style="margin:0 0 8px">${items.length} item · tanggal baru ditulis langsung ke file Excel-nya (file lama disimpan di _lama). Foto sertifikat boleh dilewati; tiap alat jadi satu PDF sendiri.</p>
+      <div style="max-height:40vh;overflow:auto;margin-bottom:10px">${items.map((i) => certRow(i, ` · sekarang ${esc(dDate(i.expiry))}`)).join('')}</div>
+      <label>Expired baru</label><input class="f" id="v" type="date" value="${y.toISOString().slice(0, 10)}">
+      <div class="two" style="margin-top:14px"><button class="btn ghost" id="n">Batal</button><button class="btn" id="y">Simpan</button></div>`);
+    items.forEach((i) => certPhotoBtn(m, i, photos));
+    $('#n', m).onclick = () => { m.remove(); resolve(null); };
+    $('#y', m).onclick = () => { const v = $('#v', m).value; if (!/^\d{4}-\d{2}-\d{2}$/.test(v)) return toast('Isi tanggal dulu', 'err'); m.remove(); resolve(v); };
+  });
+  if (!date) return false;
+  const nf = Object.keys(photos).length;
+  try {
+    const d = await busy(`Memperbarui ${items.length} item${nf ? ` + ${nf} sertifikat PDF` : ''}… (bisa 1–2 menit)`, () => api('dSetExpiry', { keys:items.map((i) => i.key), date, photos }));
+    dexpDone(d);
+    const err = d.scan && d.scan.errors && d.scan.errors.length;
+    toast(err ? 'Tersimpan, tapi sebagian file gagal dibaca ulang: ' + d.scan.errors[0] : `${d.updated.length} item diperbarui ke ${dDate(date)}${d.certs ? ` · ${d.certs} sertifikat PDF` : ''}`, err ? 'err' : 'ok');
+    return true;
+  } catch (e) { toast(e.message, 'err'); return false; }
+}
+/** Certificate photos for one item whose date stays the same. */
+async function dexpCert(i) {
+  const photos = {};
+  const go2 = await new Promise((resolve) => {
+    const m = sheet(`<h3>${i.cert ? 'Ganti' : 'Tambah'} sertifikat</h3><p class="mute small" style="margin:0 0 8px">Foto dijadikan satu PDF (satu foto satu halaman) dan disimpan di folder "${esc(dexpName(i.fileName))} - SERTIFIKAT". Tanggal expired tetap ${esc(dDate(i.expiry))}.</p>
+      ${certRow(i)}<div class="two" style="margin-top:14px"><button class="btn ghost" id="n">Batal</button><button class="btn" id="y" disabled>Simpan PDF</button></div>`);
+    certPhotoBtn(m, i, photos, () => { $('#y', m).disabled = !(photos[i.key] || []).length; });
+    $('#n', m).onclick = () => { m.remove(); resolve(false); };
+    $('#y', m).onclick = () => { m.remove(); resolve(true); };
+  });
+  if (!go2) return false;
+  try {
+    dexpDone(await busy('Membuat PDF sertifikat…', () => api('dSetCert', { key:i.key, photos:photos[i.key] })));
+    toast('Sertifikat tersimpan', 'ok'); return true;
+  } catch (e) { toast(e.message, 'err'); return false; }
+}
+/** The item menu (Akan Expired and Cari item). */
+function dexpMenu(i, after) {
+  const m = sheet(`<h3>${esc(i.label)}</h3><p class="mute">${esc(dexpName(i.fileName))} · expired ${esc(dDate(i.expiry))}</p><button class="btn" id="up">Perbarui expired</button>
+    ${i.cert ? `<button class="btn ghost" id="ce" style="margin-top:8px">📄 Lihat sertifikat (PDF)</button>` : ''}<button class="btn ghost" id="ad" style="margin-top:8px">📷 ${i.cert ? 'Ganti' : 'Tambah'} sertifikat</button>
+    <button class="btn ghost" id="op" style="margin-top:8px">Buka file Excel</button><button class="btn ghost" id="n" style="margin-top:8px">Batal</button>`);
+  $('#n', m).onclick = () => m.remove();
+  $('#op', m).onclick = () => { m.remove(); archiveDownload('dFile', { id:i.fileId }, i.fileName); };
+  if ($('#ce', m)) $('#ce', m).onclick = () => { m.remove(); archiveDownload('dFile', { id:i.cert }, i.label + '.pdf'); };
+  $('#ad', m).onclick = async () => { m.remove(); if (await dexpCert(i)) after(); };
+  $('#up', m).onclick = async () => { m.remove(); if (await dexpSet([i])) after(); };
+}
 function dexpCount() {
   const x = dexpCached(); if (!x) return null;
   return { red:x.items.filter((i) => i.days <= 30).length, orange:x.items.filter((i) => i.days > 30).length };
@@ -1748,11 +1841,21 @@ function dexp(t) {
     if (!x) { main.innerHTML = '<div class="card mute" style="text-align:center">Memuat…</div>'; return; }
     const groups = dexpGroups(x.items);   // one section per Excel file, most urgent file first, items by date inside
     main.innerHTML = `<p class="mute small" style="margin:0 2px 10px">Dibaca otomatis dari kolom EXPIRED/EXPIRY di file Excel (medical list, sertifikat, crew checklist). Pengingat juga muncul di Google Calendar "TITANIA – Expired": 3 bulan, 1 bulan, dan pada hari expired.</p>`
-      + groups.map(({ name, list }) => `<div class="sect">${esc(name)} · ${list.length}</div>` + list.map((i, _, __, cls = i.days <= 30 ? 'dred' : 'dorg') => `<button class="row-i dr" data-id="${esc(i.fileId)}" data-n="${esc(i.fileName)}"><span class="tx dt"><b>${esc(i.label)}</b>${i.context || DEXP_CREW.test(i.fileName) ? `<small class="mute" style="display:block">${esc(i.context || dexpName(i.fileName).replace(DEXP_CREW, '').replace(/[\s-]+$/, ''))}</small>` : ''}</span><span style="text-align:right"><span class="chip ${cls}">${dLeft(i.days)}</span><small class="mute" style="display:block;margin-top:3px">${esc(dDate(i.expiry))}</small></span></button>`).join('')).join('')
+      + `<div class="two" style="margin-bottom:4px"><button class="btn ghost" id="pk">${t.pick ? 'Selesai memilih' : 'Pilih beberapa'}</button><button class="btn ghost" id="fd">Cari item</button></div>`
+      + groups.map(({ name, list }) => `<div class="sect">${esc(name)} · ${list.length}</div>` + list.map((i) => dexpRow(i, t.pick)).join('')).join('')
+      + (t.pick ? `<div class="selbar"><button class="btn" id="sv" ${t.pick.size ? '' : 'disabled'}>Perbarui expired (${t.pick.size})</button></div>` : '')
       + (x.items.length ? '' : '<div class="card" style="text-align:center"><b style="color:var(--ok)">Aman.</b><p class="mute" style="margin:6px 0 0">Tidak ada yang habis dalam 3 bulan.</p></div>')
       + (x.items.length ? `<div class="two" style="margin-top:14px"><button class="btn ghost" id="exl">Excel</button><button class="btn" id="epdf">${ic('pdf')} PDF</button></div>` : '')
       + `<button class="btn ghost" id="rs" style="margin-top:10px">Periksa ulang sekarang</button><p class="mute small" style="text-align:center">Terakhir diperiksa: ${x.lastScan ? esc(new Date(x.lastScan).toLocaleString('id-ID', { day:'numeric', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit' })) : 'belum pernah'} · otomatis tiap pagi</p>`;
-    $$('[data-id]').forEach((b) => b.onclick = () => archiveDownload('dFile', { id:b.dataset.id }, b.dataset.n));
+    const byKey = new Map(x.items.map((i) => [i.key, i]));
+    $$('[data-k]').forEach((b) => b.onclick = () => {
+      const i = byKey.get(b.dataset.k); if (!i) return;
+      if (t.pick) { t.pick.has(i.key) ? t.pick.delete(i.key) : t.pick.add(i.key); return draw(); }
+      dexpMenu(i, () => { if (cur() === t) draw(); });
+    });
+    $('#pk').onclick = () => { t.pick = t.pick ? null : new Set(); draw(); };
+    $('#fd').onclick = () => go('dfind');
+    if ($('#sv')) $('#sv').onclick = async () => { if (await dexpSet(x.items.filter((i) => t.pick.has(i.key)))) { t.pick = null; if (cur() === t) draw(); } };
     if ($('#exl')) $('#exl').onclick = () => dexpExport('xlsx');
     if ($('#epdf')) $('#epdf').onclick = () => dexpExport('pdf');
     $('#rs').onclick = async () => {
@@ -1762,6 +1865,34 @@ function dexp(t) {
   };
   draw();
   dexpLoad().then(() => { if (cur() === t) draw(); }).catch((e) => { if (!dexpCached()) main.innerHTML = '<div class="card mute" style="text-align:center">Tidak bisa memuat. Periksa sinyal lalu coba lagi.</div>'; toast(e.message, 'err'); });
+}
+
+/** "Cari item": every certificate / item with an expiry date, also the ones far away; pick and give a new date. */
+function dfind(t) {
+  $('#title').textContent = 'Cari item';
+  t.q = t.q || '';
+  main.innerHTML = `<input class="f" id="q" placeholder="Cari nama alat / sertifikat / kru…" style="margin-bottom:6px"><button class="btn ghost" id="pk" style="margin-bottom:4px"></button><div id="lst"></div><div class="selbar" id="sb"><button class="btn" id="sv" disabled>Perbarui expired (0)</button></div>`;
+  $('#q').value = t.q;
+  const draw = () => {
+    const all = S.dexpAll;
+    if (!all) { $('#lst').innerHTML = '<div class="card mute" style="text-align:center">Memuat…</div>'; return; }
+    const q = t.q.trim().toUpperCase(), hit = all.filter((i) => !q || (i.label + ' ' + i.context + ' ' + i.fileName).toUpperCase().includes(q));
+    $('#lst').innerHTML = hit.length ? dexpGroups(hit).map(({ name, list }) => `<div class="sect">${esc(name)} · ${list.length}</div>` + list.map((i) => dexpRow(i, t.pick)).join('')).join('') : '<div class="card mute" style="text-align:center">Tidak ada yang cocok.</div>';
+    $('#pk').textContent = t.pick ? 'Selesai memilih' : 'Pilih beberapa';
+    $('#sb').style.display = t.pick ? '' : 'none';
+    if (t.pick) { $('#sv').disabled = !t.pick.size; $('#sv').textContent = `Perbarui expired (${t.pick.size})`; }
+    const byKey = new Map(all.map((i) => [i.key, i]));
+    $$('[data-k]').forEach((b) => b.onclick = () => {
+      const i = byKey.get(b.dataset.k); if (!i) return;
+      if (!t.pick) return dexpMenu(i, () => { if (cur() === t) busy('Memuat semua item…', () => api('dExpiryAll')).then((d) => { S.dexpAll = d.items; draw(); }).catch((e) => toast(e.message, 'err')); });
+      t.pick.has(i.key) ? t.pick.delete(i.key) : t.pick.add(i.key); draw();
+    });
+    $('#pk').onclick = () => { t.pick = t.pick ? null : new Set(); draw(); };
+    $('#sv').onclick = async () => { const list = [...t.pick].map((k) => byKey.get(k)).filter(Boolean); if (await dexpSet(list)) { t.pick = null; history.back(); } };
+  };
+  $('#q').oninput = (e) => { t.q = e.target.value; draw(); };
+  draw();
+  if (!S.dexpAll) busy('Memuat semua item…', () => api('dExpiryAll')).then((d) => { S.dexpAll = d.items; if (cur() === t) draw(); }).catch((e) => toast(e.message, 'err'));
 }
 
 /* ---------- master home: two choices ---------- */
